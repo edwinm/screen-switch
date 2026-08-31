@@ -61,13 +61,12 @@ open "Screen Switch.app"
 ```
 
 `build` compiles the menu bar app into `Screen Switch.app` and ad-hoc signs it.
-(`./test` runs the test suite, if you are changing anything.)
 Opening it puts the icon in your menu bar; tick **Settings… → General → Start
-Screen Switch at login** to have it come back at every login.
+Screen Switch at login** to have it come back at every login. If you are changing
+anything, `./test` runs the test suite; it needs no monitor.
 
-`./install-agent` is the other way to do that, from the command line. Use one or
-the other. See
-[Starting, stopping, and removing the app](#starting-stopping-and-removing-the-app).
+`./install-agent` is the other way to do that, from the command line, and is
+described in [Command line](COMMAND-LINE.md). Use one or the other.
 
 There is no download to grab: the app runs Homebrew binaries and drives DDC,
 which the App Sandbox forbids, so it is distributed as source you compile
@@ -117,41 +116,9 @@ the app notices within a few seconds and adjusts the Mac to match.
 
 ### From the command line
 
-The same work is available as a shell tool you can run directly:
-
-```bash
-./screen-switch toggle
-```
-
-| verb | does |
-| --- | --- |
-| `toggle` | extended → mirrored, or back. This is what a hotkey would run. |
-| `mirrored` | mirror onto your own screen, then hand the monitor over |
-| `extended` | restore your captured arrangement |
-| `status` | prints `extended` or `mirrored` |
-| `input` | prints the monitor's current input code; `input <code>` sets it |
-| `discover` | dumps the raw values Settings… reads |
-
-`mac` and `work` still work as aliases for `extended` and `mirrored`.
-
-If the shared monitor is not connected at all, every verb is a clean no-op.
-
-### A keyboard shortcut
-
-The menu bar app covers the clicking. If you also want a key combo, wrap the
-script in a Shortcut:
-
-1. Shortcuts → Settings → Advanced → enable **Allow Running Scripts**. Nothing
-   runs until this is on.
-2. New shortcut named e.g. **Toggle Monitor**, containing a single **Run Shell
-   Script** action with the full path to `screen-switch` in this checkout, plus
-   `toggle`. Leave the shell as `/bin/bash` and "Pass Input" as *to stdin*.
-3. In the shortcut's details pane, set a **keyboard shortcut**.
-4. Run it once and approve the permission prompt.
-
-Shortcuts runs scripts with a minimal `PATH`, which is why the config stores
-absolute paths to `displayplacer` and `m1ddc` rather than relying on the shell to
-find them.
+Everything above is also a shell tool you can run directly — `screen-switch
+toggle`, a hotkey through Shortcuts, and `install-agent` for the login item
+without the app. That is its own page: **[Command line](COMMAND-LINE.md)**.
 
 ### Starting, stopping, and removing the app
 
@@ -164,24 +131,11 @@ back.
 The registration remembers where the app is, so if you move the checkout, turn
 the setting off and on again.
 
-The command line route does the same thing from outside the app:
+Activity goes to `~/Library/Logs/screen-switch.log`, which is what **Open Log**
+in the menu shows.
 
-```bash
-./install-agent            # install as a login item, and start it
-./install-agent start      # start it again after using Quit in the menu
-./install-agent stop       # stop it until next login
-./install-agent status     # running? installed?
-./install-agent uninstall  # stop it and remove it from login items
-```
-
-With the agent installed, **Quit** in the menu stops it until your next login. To
-bring it back without logging out, use `install-agent start` (or just open
-`Screen Switch.app`).
-
-Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item).
-On the `install-agent` route, launchd's own stdout/stderr go to
-`~/Library/Logs/screen-switch.agent.log` as well; the checkbox's agent sends
-them to the unified log instead.
+There is a second route that does the same job from a terminal, `install-agent`,
+described in [Command line](COMMAND-LINE.md#install-agent). Use one or the other.
 
 ### Why the entry says "Screen Switch.app"
 
@@ -190,19 +144,6 @@ appends `.app` to every application's name, and Login Items shows the same
 string for all of them. Turning off **Finder → Settings → Advanced → Show all
 filename extensions** drops the suffix everywhere, including here. Nothing in
 the app can override it.
-
-### Why the install-agent entry looks like a stray Unix binary
-
-Installed with `install-agent`, the Login Items row reads **ScreenSwitch** with
-a generic executable icon and "part of an unknown developer", rather than
-*Screen Switch.app* with its icon. That is the ad-hoc signature: the plist's
-`AssociatedBundleIdentifiers` only maps the job back to the app when the two
-share a Developer ID team, and an ad-hoc signature has no team, so macOS
-describes the program launchd runs instead.
-
-The checkbox in Settings has no such problem — the agent it registers is
-inside the app bundle, so the row is the app. If the tidy entry matters to you,
-use the checkbox and `./install-agent uninstall` the launchd job.
 
 ### If the menu bar icon does not appear
 
@@ -321,18 +262,16 @@ So starting work needs one gesture — the menu, or the monitor's own buttons �
 ending it needs none. That asymmetry is worth knowing about: arrival is a
 decision, departure is an event.
 
-## The agent and launchd
+## The app and the shell tool
 
 `Screen Switch.app` is a native AppKit menu bar app. It shells out to
-`screen-switch` for the actual display work, so the shell script stays the single
-source of truth and the app is only the UI in front of it.
+`screen-switch` for the actual display work — including every input change, so
+the guard against inputs that strand you is in one place — which leaves the shell
+script as the single source of truth and the app as the UI in front of it.
 
-Both routes end up as a launchd job, so this applies either way. Note that
-`launchctl kill SIGTERM` does *not* stop it: `KeepAlive` is set to
-`SuccessfulExit: false`, so a signal counts as an unsuccessful exit and launchd
-restarts it within seconds. That setting is what makes the menu's **Quit** work —
-a clean exit stays quit — so `install-agent stop` unloads the job with `bootout`
-instead. The plist stays in place, so it returns at the next login either way.
+Either way of starting it at login ends up as a launchd job, which has one
+consequence worth knowing:
+[`launchctl kill` does not stop it](COMMAND-LINE.md#launchctl-kill-does-not-stop-it).
 
 ## It is not sandboxed, and not notarised
 
@@ -357,6 +296,7 @@ lib.sh                  shared shell helpers
 build                   swiftc + codesign
 test                    ./test -- the test suite, needs no monitor
 install-agent           the command line alternative to the checkbox
+COMMAND-LINE.md         the shell tools: screen-switch, install-agent
 config.example.sh       an annotated config, if you would rather write one
 devices.example.conf    likewise for the machine list
 icons/                  app and menu bar icons, plus the script that renders them
@@ -369,8 +309,8 @@ Your own settings, written by Settings… and read by the shell tool:
 ~/.config/screen-switch/devices.conf
 ```
 
-`screen-switch` also accepts `$SCREEN_SWITCH_CONFIG`, and falls back to a
-`config.sh` next to itself, which is handy for testing.
+`screen-switch` reads the same two files, and can be pointed elsewhere — see
+[Where it reads its configuration](COMMAND-LINE.md#where-it-reads-its-configuration).
 
 ## License
 
