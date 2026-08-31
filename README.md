@@ -95,7 +95,8 @@ checkout, so pulling a new version never touches it.
 Click the icon and you get a menu of your machines, with a checkmark on whichever
 one the monitor is currently showing, plus the current display mode. Pick a
 machine and the monitor switches to it and the Mac applies the matching layout.
-The menu also has **Settings…**, **Open Log**, and **Quit**.
+The menu also has **Settings…**, **Open Log**, **About Screen Switch**, and
+**Quit**.
 
 The icon itself shows the state at a glance: extended, mirrored, or monitor
 unreachable.

@@ -188,7 +188,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Check the monitor every:"), stack(intervalPopup, help: nil)],
             [label("Returning to this Mac:"),
              stack(switchBackCheckbox,
-                   help: "Also pull the monitor's input back over DDC. Whether that works depends on the monitor: some keep answering while showing another machine, some do not.")],
+                   help: "Also pull the monitor’s input back over DDC. Whether that works depends on the monitor: some keep answering while showing another machine, some do not.")],
         ])
         style(grid)
         return grid
@@ -345,7 +345,7 @@ final class SettingsWindowController: NSWindowController {
                    help: "Which display m1ddc talks to — a screen id, or an index from “m1ddc display list”. Leave it empty to use the shared monitor, which is almost always what you want.")],
             [label("Never select inputs:"),
              stack(blockedField,
-                   help: "Comma-separated input codes to refuse, whatever asks for them. Some monitors drop the link to the Mac when a particular input is chosen — the picture and the DDC channel go together, and only the monitor's own buttons bring them back. If yours has one, list it here.")],
+                   help: "Comma-separated input codes to refuse, whatever asks for them. Some monitors drop the link to the Mac when a particular input is chosen — the picture and the DDC channel go together, and only the monitor’s own buttons bring them back. If yours has one, list it here.")],
             [NSGridCell.emptyContentView, reveal],
         ])
         style(grid)
@@ -661,6 +661,7 @@ final class SettingsWindowController: NSWindowController {
         alert.informativeText = "The monitor keeps input \(device.code); only this entry goes away."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self else { return }
             self.devices.remove(at: row)
@@ -686,7 +687,7 @@ final class SettingsWindowController: NSWindowController {
 
         // The reason nobody has to probe their monitor: switch it over with its
         // own buttons, then click, and the live DDC value is read back.
-        let useCurrent = NSButton(title: "Use Monitor's Current Input",
+        let useCurrent = NSButton(title: "Use Monitor’s Current Input",
                                   target: self, action: #selector(useCurrentInput))
         useCurrent.bezelStyle = .rounded
 
@@ -705,7 +706,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Name:"), name],
             [label("Input code:"),
              stack(codeRow,
-                   help: "Switch the monitor to that machine with its own buttons, then click — the code is read from the monitor. Some monitors drop the link to the Mac when certain inputs are chosen; if that happens, the monitor's buttons bring it back.")],
+                   help: "Switch the monitor to that machine with its own buttons, then click — the code is read from the monitor. Some monitors drop the link to the Mac when certain inputs are chosen; if that happens, the monitor’s buttons bring it back.")],
             [label("Displays:"),
              stack(mode,
                    help: "“Extended” restores your captured arrangement — that is this Mac. “Mirrored” puts everything on your own screen, for a machine that takes the monitor away.")],
@@ -769,9 +770,9 @@ final class SettingsWindowController: NSWindowController {
         guard let number = Int(code), (0...255).contains(number) else {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "That is not an input code."
+            alert.messageText = "That input code is not valid."
             alert.informativeText = "Input codes are whole numbers from 0 to 255. Use "
-                + "“Use Monitor's Current Input” to read yours."
+                + "“Use Monitor’s Current Input” to read yours."
             alert.addButton(withTitle: "OK")
             if let sheet = addSheet { alert.beginSheetModal(for: sheet) } else { alert.runModal() }
             return

@@ -164,6 +164,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openLog() { NSWorkspace.shared.open(Paths.logFile) }
 
+    // Name, icon, version and copyright come off Info.plist; only the byline and
+    // the repo link have to be supplied. The panel's text view honours .link, so
+    // the URL is clickable rather than something to retype.
+    @objc func openAbout() {
+        let repo = URL(string: "https://github.com/edwinm/screen-switch")!
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        // Colours are set explicitly: text left without a .foregroundColor is
+        // drawn black in the panel's text view, which is unreadable in Dark Mode.
+        let credits = NSMutableAttributedString(
+            string: "by Edwin Martin\n",
+            attributes: [.font: NSFont.systemFont(ofSize: 11),
+                         .foregroundColor: NSColor.labelColor])
+        credits.append(NSAttributedString(
+            string: repo.absoluteString,
+            attributes: [.font: NSFont.systemFont(ofSize: 11),
+                         .foregroundColor: NSColor.linkColor,
+                         .link: repo]))
+        credits.addAttribute(.paragraphStyle, value: centred,
+                             range: NSRange(location: 0, length: credits.length))
+
+        // Same reason as openSettings: an accessory app is never the active one.
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
+
     @objc func quit() { NSApp.terminate(nil) }
 
     // MARK: - The status item icon
@@ -180,9 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         var label: String {
             switch self {
-            case .extended: return "Screen Switch -- this Mac has the monitor"
-            case .mirrored: return "Screen Switch -- another machine has the monitor"
-            case .unreachable: return "Screen Switch -- monitor unreachable"
+            case .extended: return "Screen Switch — this Mac has the monitor"
+            case .mirrored: return "Screen Switch — another machine has the monitor"
+            case .unreachable: return "Screen Switch — monitor unreachable"
             }
         }
     }
@@ -248,6 +274,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func addSettingsAndQuit(to menu: NSMenu) {
+        let aboutItem = NSMenuItem(
+            title: "About Screen Switch", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         // "Settings...", not "Preferences...": Apple renamed it in macOS 13, and
         // the comma is its reserved shortcut.
         let settingsItem = NSMenuItem(
@@ -259,6 +290,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logItem.target = self
         menu.addItem(logItem)
 
+        // Quit stands alone under a separator, the way every macOS menu ends.
+        menu.addItem(.separator())
         let q = NSMenuItem(title: "Quit Screen Switch", action: #selector(quit), keyEquivalent: "q")
         q.target = self
         menu.addItem(q)
