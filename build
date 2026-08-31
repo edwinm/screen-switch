@@ -9,28 +9,53 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP="${DIR}/Screen Switch.app"
 BIN="${APP}/Contents/MacOS/ScreenSwitch"
 RES="${APP}/Contents/Resources"
+AGENTS="${APP}/Contents/Library/LaunchAgents"
 
 SOURCES=(
   "${DIR}/Config.swift"
   "${DIR}/Displays.swift"
+  "${DIR}/LoginItem.swift"
   "${DIR}/ScreenSwitch.swift"
   "${DIR}/SettingsWindow.swift"
   "${DIR}/main.swift"
 )
+
+# LaunchServices has to have been told about a bundle outside /Applications
+# before anything can find it by bundle id -- Finder's icon, `open -b`, and the
+# login item the app registers for itself all resolve through it. Cheap hygiene
+# on every build, and never fatal: it is a cache refresh.
+#
+# It does *not* fix install-agent's Login Items row: that job is listed by the
+# program launchd runs, and stays generic no matter what. Measured; see
+# AGENTS.md.
+register_with_launch_services() {
+  local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  # touch first: LaunchServices serves a cached icon for an unchanged bundle
+  # date, so a re-rendered AppIcon.icns is otherwise invisible until something
+  # else disturbs the bundle. Measured -- a rebuilt icon kept coming back as
+  # the previous one until the bundle's own timestamp moved.
+  touch "$1"
+  [[ -x "$lsregister" ]] && "$lsregister" -f "$1" >/dev/null 2>&1
+  return 0
+}
 
 command -v swiftc >/dev/null || {
   echo "swiftc not found -- install the Xcode command line tools: xcode-select --install" >&2
   exit 1
 }
 
-mkdir -p "$(dirname "$BIN")" "$RES"
+mkdir -p "$(dirname "$BIN")" "$RES" "$AGENTS"
 # The status item looks its icons up by name in Resources, so they have to be
 # in place before the signature is taken over the bundle.
 cp "${DIR}/icons/AppIcon.icns" \
    "${DIR}/icons/MenuExtended.pdf" \
    "${DIR}/icons/MenuMirrored.pdf" \
    "${DIR}/icons/MenuUnreachable.pdf" "$RES/"
+# SMAppService reads the login agent's plist from inside the bundle, and the
+# signature has to cover it -- an unsigned or modified copy is refused.
+cp "${DIR}/org.bitstorm.screen-switch.login.plist" "$AGENTS/"
 swiftc -O -swift-version 5 -o "$BIN" "${SOURCES[@]}"
 codesign --force --sign - "$APP"
+register_with_launch_services "$APP"
 
 echo "built ${BIN}"

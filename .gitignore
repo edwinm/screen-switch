@@ -8,6 +8,8 @@ Screen Switch.app/Contents/MacOS/ScreenSwitch
 Screen Switch.app/Contents/_CodeSignature/
 # Copied in from icons/, which is the source of record.
 Screen Switch.app/Contents/Resources/
+# Likewise: the login agent's plist is copied in from the repo root.
+Screen Switch.app/Contents/Library/
 
 .DS_Store
 .idea/

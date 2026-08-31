@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The login item the app registers for itself. `build` copies this into
+  Screen Switch.app/Contents/Library/LaunchAgents/ before signing, where
+  SMAppService.agent(plistName:) expects it, and LoginItem.swift registers it.
+
+  Registered this way the item belongs to the app, so System Settings lists it
+  under the app's own name and icon. The launchd job install-agent writes is the
+  same idea from outside the bundle, and is listed as a bare executable instead.
+
+  Nothing machine-specific can live here -- the file is inside the signed
+  bundle, so there is nothing to render per machine:
+
+  - BundleProgram is a path *relative to the app bundle*, which is exactly why
+    it exists. Program/ProgramArguments would need an absolute one.
+  - There is no StandardOutPath or StandardErrorPath for the same reason: both
+    would have to name the user's home. launchd's own stdout/stderr go to the
+    unified log instead. The app's log at ~/Library/Logs/screen-switch.log --
+    the Open Log menu item -- is unaffected, and is the one worth reading.
+-->
+<plist version="1.0">
+<dict>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/ScreenSwitch</string>
+	<!-- Restart on a crash or a signal, but stay dead on a clean exit(0).
+	     That is what makes the menu's Quit work; see AGENTS.md. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>Label</key>
+	<string>org.bitstorm.screen-switch.login</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+</dict>
+</plist>

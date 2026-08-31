@@ -31,11 +31,13 @@ ScreenSwitch.swift      AppDelegate: status item, menu, edge-triggered watcher
 Config.swift            Config/Device models, the bash-subset parser, generator
 Displays.swift          Shell, ddcFailed, display detection, layout generation
 SettingsWindow.swift    the Settings window
+LoginItem.swift         SMAppService wrapper behind the "start at login" checkbox
 screen-switch           shell tool doing the real display work; usable alone
 lib.sh                  shared shell helpers
 build                   swiftc + codesign
-install-agent           login-item wiring: install/start/stop/status/uninstall
+install-agent           the command line alternative to the checkbox
 org.bitstorm.screen-switch.plist.template   rendered per machine by install-agent
+org.bitstorm.screen-switch.login.plist      bundled agent; build copies it into the app
 config.example.sh       annotated reference config
 devices.example.conf    annotated reference machine list
 ```
@@ -259,6 +261,105 @@ cannot see — the exact problem this project exists to solve. Check
   `screencapture -l <windowNumber>`. Point `XDG_CONFIG_HOME` at a scratch
   directory to exercise the first-run path without touching a real config.
 
+## The app icon is full bleed, and the name in Login Items is not ours
+
+Two findings from making the Login Items row look right, both measured:
+
+- **macOS pads an icon that does not fill its canvas.** The icon used to be the
+  glyph on a dark rounded tile, and that tile is what reads as black padding in
+  a Login Items row. Removing it does *not* give a bare glyph: the system
+  composites anything with transparent margins onto a light rounded tile of its
+  own, so black padding becomes grey padding. An icon that fills its canvas is
+  masked to the system shape instead, which is the only way to have none. So
+  `drawAppIcon` fills the square and lets the mask round it, and the screen's
+  white bezel — which would fall outside that mask — is gone. The diagonal is
+  what carries over from the menu bar glyph.
+- **LaunchServices caches the icon against the bundle's date.** A re-rendered
+  `AppIcon.icns` keeps coming back as the previous one, `lsregister -f` or not,
+  until the bundle's own timestamp moves. `build` therefore touches the bundle
+  before registering it. BTM caches separately again, so a changed icon only
+  reaches an existing login item when the item is re-registered — untick and
+  re-tick the checkbox.
+
+The row says **Screen Switch.app**, not *Screen Switch*, and nothing in the app
+can change that. It is the Finder preference "Show all filename extensions":
+with it on, `URLResourceValues.localizedName` appends `.app` to every
+application on the machine, and BTM shows that string — every other app row in
+that list is the same (`1Password.app`, `Docker.app`, `Spotify.app`).
+`LSHasLocalizedDisplayName` with a localized `CFBundleDisplayName` does *not*
+override it; that was tried with a deliberately different name on a scratch copy
+of the bundle and LaunchServices still returned the file name. Do not add that
+key back. The only control is the user's own Finder setting.
+
+## Starting at login
+
+Settings → General → **Start Screen Switch at login** registers the LaunchAgent
+bundled at `Contents/Library/LaunchAgents/`, via
+`SMAppService.agent(plistName:)`. `install-agent` does the same job from
+outside, and the two are alternatives; installing both is harmless but shows two
+rows in Login Items, which the pane points out when it finds the other plist.
+
+### Why the bundled agent, and not the other two options
+
+All three were tried on a real machine. The Login Items row is the difference:
+
+- **`SMAppService.agent`** — the item belongs to the app that registered it, so
+  System Settings lists it under **Allow in the Background** as "Screen
+  Switch.app" with the real icon. `KeepAlive` survives, because it is still a
+  launchd job. This is what ships.
+- **`SMAppService.mainApp`** — lands under **Open at Login** instead, and
+  loginwindow launches the app directly, so there is no `KeepAlive` and no crash
+  recovery. Rejected: the row is in the wrong list and it loses a property.
+- **`install-agent`'s plist** — lives outside any bundle, so BTM describes the
+  program launchd runs: a bare executable named **ScreenSwitch** with the
+  generic `exec` icon and "part of an unknown developer". `AssociatedBundleIdentifiers`
+  is in that plist and does *not* fix it — the association wants the job's
+  program and the bundle to share a Team ID, and an ad-hoc signature has no
+  team. `lsregister -f` and a full bootout/bootstrap change nothing; both were
+  measured. Do not spend another afternoon on that icon.
+
+### Constraints the bundled plist is under
+
+It is inside the signed bundle, so nothing can be rendered per machine:
+
+- `BundleProgram` holds a path *relative to the app bundle*, which is exactly
+  why the key exists. `Program`/`ProgramArguments` would need an absolute path.
+- No `StandardOutPath`/`StandardErrorPath`: they would have to name the user's
+  home. launchd's stdout/stderr go to the unified log, and
+  `~/Library/Logs/screen-switch.agent.log` therefore only exists on the
+  `install-agent` route. The app's own log is unaffected.
+- `build` copies the plist in **before** `codesign`. SMAppService refuses a
+  plist the signature does not cover, the same way the icons have to be in
+  `Resources/` first.
+
+### One instance, whoever started it
+
+`main.swift` exits immediately if another instance of the same bundle id is
+already running. This is load-bearing, not tidiness: `RunAtLoad` means
+*registering* the agent bootstraps it at once, so ticking the checkbox in a
+running app would put a second icon in the menu bar. It also makes having both
+mechanisms installed harmless. `exit(0)`, not a signal, so `KeepAlive` leaves
+the loser dead.
+
+### Other things about the checkbox
+
+- `register()` returns success even when the user has the item switched *off* in
+  System Settings; only `status` afterwards reports `.requiresApproval`. Check
+  the status, do not trust the call.
+- The checkbox is never remembered in config — it is read from the service's
+  `status` every `refreshControls()`, which `windowDidBecomeKey` already calls,
+  so toggling it in System Settings does not leave a lying checkbox.
+- Registration is by bundle path. Moving the checkout leaves a dead Login Items
+  entry; re-toggle after a move.
+- `LoginItem.isAvailable` is false when not running from a `.app` — the headless
+  Settings harness below — and the checkbox is disabled rather than failing.
+- **No shell commands in the UI.** When the pane has to mention the other login
+  item it says to switch it off in System Settings, where the user already is.
+  `install-agent` is documented in the README, not in the app.
+
+Bumping the deployment target below macOS 13 would remove SMAppService.
+`Info.plist` says `LSMinimumSystemVersion 13.0`.
+
 ## Build and install
 
 ```bash
@@ -321,7 +422,7 @@ also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
 ~/.config/screen-switch/config.sh         settings (Settings… writes this)
 ~/.config/screen-switch/devices.conf      the machine list
 ~/Library/Logs/screen-switch.log          app activity (the Open Log menu item)
-~/Library/Logs/screen-switch.agent.log    launchd stdout/stderr
+~/Library/Logs/screen-switch.agent.log    launchd stdout/stderr (install-agent only)
 ~/Library/LaunchAgents/org.bitstorm.screen-switch.plist   rendered at install
 ```
 

@@ -6,6 +6,11 @@
 #   stop       stop it (same as the menu's Quit); it returns at next login
 #   status     is it running?
 #   uninstall  stop it and remove it from login items
+#
+# Settings... > General > "Start Screen Switch at login" does the same job from
+# inside the app, and gets a tidier Login Items row. The two are alternatives;
+# installing both is harmless (the second copy to start exits) but shows two
+# rows in Login Items.
 set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,6 +80,11 @@ if [[ ! -x "$BIN" ]]; then
   "${DIR}/build" || exit 1
 fi
 # Re-sign if the bundle changed; BTM keys off the signature.
+#
+# This does not make Login Items show the app's name or icon: the job runs the
+# binary, so it is listed as "ScreenSwitch" with a generic executable icon no
+# matter what. The checkbox in Settings registers an agent from *inside* the
+# bundle, which is why that one is listed properly. Measured -- see AGENTS.md.
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 
 # Render the launchd job for *this* machine. The template carries no paths of

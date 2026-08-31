@@ -31,6 +31,8 @@ final class SettingsWindowController: NSWindowController {
     private let layoutSummary = NSTextField(labelWithString: "")
     private let followCheckbox = NSButton()
     private let switchBackCheckbox = NSButton()
+    private let loginItemCheckbox = NSButton()
+    private lazy var loginItemNote = secondary("")
     private let intervalPopup = NSPopUpButton()
     private let displayplacerField = NSTextField()
     private let m1ddcField = NSTextField()
@@ -181,6 +183,22 @@ final class SettingsWindowController: NSWindowController {
             intervalPopup.lastItem?.tag = s
         }
 
+        loginItemCheckbox.setButtonType(.switch)
+        loginItemCheckbox.title = "Start Screen Switch at login"
+        loginItemCheckbox.target = self
+        loginItemCheckbox.action = #selector(loginItemChanged)
+
+        // Two lines of secondary text, the second only when there is something
+        // to say, so it is built by hand rather than with stack(help:).
+        let loginItem = NSStackView(views: [
+            loginItemCheckbox,
+            secondary("Screen Switch is listed in System Settings › General › Login Items, where it can also be turned off."),
+            loginItemNote,
+        ])
+        loginItem.orientation = .vertical
+        loginItem.alignment = .leading
+        loginItem.spacing = 4
+
         let grid = NSGridView(views: [
             [label("When the input changes:"),
              stack(followCheckbox,
@@ -189,6 +207,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Returning to this Mac:"),
              stack(switchBackCheckbox,
                    help: "Also pull the monitor’s input back over DDC. Whether that works depends on the monitor: some keep answering while showing another machine, some do not.")],
+            [label("At login:"), loginItem],
         ])
         style(grid)
         return grid
@@ -398,6 +417,7 @@ final class SettingsWindowController: NSWindowController {
         fill(mainDisplayPopup, selecting: config.mainDisplayID)
         fill(sharedDisplayPopup, selecting: config.sharedDisplayID)
         fillMirrorResolutions()
+        refreshLoginItem()
 
         layoutSummary.stringValue = layoutDescription()
         displayplacerField.stringValue = config.displayplacer
@@ -474,6 +494,30 @@ final class SettingsWindowController: NSWindowController {
         return "\(screens), largest \(biggest.label)"
     }
 
+    /// The toggle also lives in System Settings, so the checkbox is read from
+    /// SMAppService rather than remembered. refreshControls() runs on
+    /// windowDidBecomeKey, which is enough to catch a change made over there.
+    private func refreshLoginItem() {
+        let status = LoginItem.status
+        loginItemCheckbox.state = status == .enabled ? .on : .off
+        loginItemCheckbox.isEnabled = LoginItem.isAvailable
+
+        let note: String
+        if !LoginItem.isAvailable {
+            note = "Only available when running from Screen Switch.app."
+        } else if LoginItem.legacyAgentInstalled {
+            // No shell commands in the UI: the other entry can be switched off
+            // in System Settings, which is where the user already is.
+            note = "Another copy of Screen Switch is also set to start at login, listed as “ScreenSwitch”. Switch that one off in System Settings › General › Login Items."
+        } else if status == .requiresApproval {
+            note = "Switched off in System Settings › General › Login Items. Turn it back on there."
+        } else {
+            note = ""
+        }
+        loginItemNote.stringValue = note
+        loginItemNote.isHidden = note.isEmpty
+    }
+
     // MARK: - Persisting
     //
     // No Save button: the HIG asks settings to take effect as they are changed,
@@ -534,6 +578,40 @@ final class SettingsWindowController: NSWindowController {
     @objc private func switchBackChanged() {
         config.tryInputSwitchBack = switchBackCheckbox.state == .on
         commitConfig()
+    }
+
+    @objc private func loginItemChanged() {
+        let wanted = loginItemCheckbox.state == .on
+        do {
+            try LoginItem.set(wanted)
+        } catch {
+            loginItemCheckbox.state = wanted ? .off : .on
+            present(error: wanted ? "Screen Switch could not be set to open at login."
+                                  : "Screen Switch could not be removed from login items.",
+                    detail: error.localizedDescription)
+            return
+        }
+        // register() reports success even when the user has the item switched
+        // off in System Settings; only the status afterwards tells the truth.
+        if wanted, LoginItem.status == .requiresApproval { askForApproval() }
+        refreshLoginItem()
+    }
+
+    /// A real failure -- the registration did not take -- and the fix is in
+    /// System Settings, so it gets an alert with a verb button that goes there.
+    private func askForApproval() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Screen Switch is switched off in Login Items."
+        alert.informativeText =
+            "It will not open at login until it is turned back on in System Settings › General › Login Items."
+        alert.addButton(withTitle: "Open Login Items")
+        alert.addButton(withTitle: "Not Now")
+        let handle: (NSApplication.ModalResponse) -> Void = { response in
+            if response == .alertFirstButtonReturn { LoginItem.openSystemSettings() }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: handle) }
+        else { handle(alert.runModal()) }
     }
 
     @objc private func intervalChanged() {

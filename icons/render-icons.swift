@@ -1,8 +1,12 @@
 // render-icons.swift -- draw the Screen Switch icon set with CoreGraphics.
 //
-// Everything is derived from one 18x18 glyph grid, the same grid the design
-// canvas uses, so the app icon and the menu bar template never drift apart.
+// The menu bar templates are drawn on one 18x18 glyph grid, the same grid the
+// design canvas uses. The app icon is not: it is full bleed, for the reason
+// given above drawAppIcon. What the two share is the diagonal.
 // Run with: swift icons/render-icons.swift
+//
+// Then rebuild the icns, which is what the bundle carries:
+//   iconutil -c icns icons/AppIcon.iconset -o icons/AppIcon.icns
 
 import AppKit
 import CoreGraphics
@@ -22,12 +26,18 @@ let strokeW: CGFloat = 1.5
 // without a seam and the split stays the only open edge.
 let frame = CGRect(x: 1.5, y: 3.5, width: 15, height: 11)
 let frameR: CGFloat = 2.1
-let inner = frame.insetBy(dx: strokeW / 2, dy: strokeW / 2)
-let innerR = frameR - strokeW / 2
+// The app icon fills the canvas, so its bezel is drawn thinner than the menu
+// bar's: at the template's 1.5 the same stroke would read as a picture frame
+// rather than the edge of a screen.
+let appStrokeW: CGFloat = 0.9
+
+func innerRect(_ lineWidth: CGFloat) -> CGRect {
+    frame.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+}
 
 // Half-plane through the inner rectangle's corners. In CoreGraphics y grows
 // upward, so "upper" left is the corner at max-y.
-func halfPlane(_ half: Half) -> CGPath? {
+func halfPlane(_ half: Half, _ inner: CGRect) -> CGPath? {
     let bl = CGPoint(x: inner.minX, y: inner.minY)
     let tr = CGPoint(x: inner.maxX, y: inner.maxY)
     let p = CGMutablePath()
@@ -46,8 +56,10 @@ func halfPlane(_ half: Half) -> CGPath? {
 }
 
 func drawGlyph(_ ctx: CGContext, half: Half, fill: CGColor, stroke: CGColor,
-               ghostOtherHalf: Bool) {
-    if let clip = halfPlane(half) {
+               unlit: CGColor?, lineWidth: CGFloat = strokeW) {
+    let inner = innerRect(lineWidth)
+    let innerR = frameR - lineWidth / 2
+    if let clip = halfPlane(half, inner) {
         ctx.saveGState()
         ctx.addPath(clip)
         ctx.clip()
@@ -57,24 +69,25 @@ func drawGlyph(_ ctx: CGContext, half: Half, fill: CGColor, stroke: CGColor,
         ctx.fillPath()
         ctx.restoreGState()
     }
-    // A whisper of light in the unlit half so the shape still reads as a
-    // screen rather than a wedge. Colour icon only -- a template image has no
-    // room for a second tone.
-    if ghostOtherHalf, half != .none,
-       let clip = halfPlane(half == .upperLeft ? .lowerRight : .upperLeft) {
+    // The unlit half, painted rather than left open. Without the tile behind it
+    // the icon has no background of its own, and a bare wedge on transparency
+    // disappears into a light window; a filled screen reads either way.
+    // Colour icon only -- a template image has no room for a second tone.
+    if let unlit, half != .none,
+       let clip = halfPlane(half == .upperLeft ? .lowerRight : .upperLeft, inner) {
         ctx.saveGState()
         ctx.addPath(clip)
         ctx.clip()
         ctx.addPath(CGPath(roundedRect: inner, cornerWidth: innerR,
                            cornerHeight: innerR, transform: nil))
-        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.07))
+        ctx.setFillColor(unlit)
         ctx.fillPath()
         ctx.restoreGState()
     }
     ctx.addPath(CGPath(roundedRect: frame, cornerWidth: frameR,
                        cornerHeight: frameR, transform: nil))
     ctx.setStrokeColor(stroke)
-    ctx.setLineWidth(strokeW)
+    ctx.setLineWidth(lineWidth)
     ctx.strokePath()
 }
 
@@ -85,64 +98,45 @@ func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
             green: CGFloat((hex >> 8) & 0xff) / 255,
             blue: CGFloat(hex & 0xff) / 255, alpha: a)
 }
-let tileTop = rgb(0x2E343C), tileBottom = rgb(0x13161B)
 let accent = rgb(0x3C93F0), screenWhite = rgb(0xF2F5F8)
+// The half of the screen nobody is using. Dark enough to hold the diagonal
+// against the lit half, light enough not to read as a hole.
+let screenDark = rgb(0x23282F)
 
 // MARK: - App icon
-
-// Apple's macOS grid: on a 1024 canvas the body is 824 square with a 185.4
-// corner, and the margin that leaves is where the shadow lives. Filling the
-// canvas edge to edge renders about a quarter larger than every neighbour in
-// the Dock -- measure any system icon and it comes back at 80% of its canvas.
-let bodyRatio: CGFloat = 824.0 / 1024.0
-let cornerRatio: CGFloat = 185.4 / 824.0
+//
+// Full bleed, and no tile of its own. macOS composites any icon that does not
+// fill its canvas onto a light rounded tile and pads it -- so "the glyph on
+// transparency" is not an option that exists: it comes back as a small picture
+// in a grey frame. An icon that fills the canvas is masked to the system shape
+// instead, which is the only way to have no padding at all.
+//
+// What that costs is the bezel: the screen's white outline and its rounded
+// corners fall outside the mask. The diagonal is what survives, and it is the
+// half that carries the meaning -- lit corner is whoever owns the monitor,
+// the same split the menu bar template draws.
 
 func drawAppIcon(_ ctx: CGContext, size: CGFloat) {
-    let body = size * bodyRatio
-    let r = body * cornerRatio
-    let tile = CGRect(x: (size - body) / 2, y: (size - body) / 2,
-                      width: body, height: body)
-    let tilePath = CGPath(roundedRect: tile, cornerWidth: r, cornerHeight: r,
-                          transform: nil)
+    ctx.setFillColor(screenDark)
+    ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
 
-    // Shadow first, as a filled silhouette: sized to stay inside the margin
-    // and weighted downward, the way the system icons are.
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -size * 0.012),
-                  blur: size * 0.034,
-                  color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.34))
-    ctx.addPath(tilePath)
-    ctx.setFillColor(tileBottom)
+    // The lit half, corner to corner. Bottom-left to top-right, matching the
+    // glyph's .upperLeft: this Mac has the monitor.
+    let p = CGMutablePath()
+    p.addLines(between: [CGPoint(x: 0, y: 0), CGPoint(x: size, y: size),
+                         CGPoint(x: 0, y: size)])
+    p.closeSubpath()
+    ctx.addPath(p)
+    ctx.setFillColor(accent)
     ctx.fillPath()
-    ctx.restoreGState()
 
-    ctx.saveGState()
-    ctx.addPath(tilePath)
-    ctx.clip()
-    let space = CGColorSpaceCreateDeviceRGB()
-    let grad = CGGradient(colorsSpace: space,
-                          colors: [tileTop, tileBottom] as CFArray,
-                          locations: [0, 1])!
-    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: tile.maxY),
-                           end: CGPoint(x: 0, y: tile.minY), options: [])
-    // Top edge catch-light, the one piece of relief on an otherwise flat tile.
-    // Left to go sub-pixel at the small sizes rather than clamped to a full
-    // unit, which at 16pt would be a sixteenth of the icon.
-    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.13))
-    ctx.setLineWidth(body * 0.006)
-    ctx.addPath(tilePath)
+    // A hairline along the split, so the two halves read as an edge rather
+    // than as two flat shapes that happen to meet.
+    ctx.move(to: CGPoint(x: 0, y: 0))
+    ctx.addLine(to: CGPoint(x: size, y: size))
+    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.5))
+    ctx.setLineWidth(size * 0.012)
     ctx.strokePath()
-    ctx.restoreGState()
-
-    // Glyph at 62% of the body, optically centred.
-    let scale = body * 0.62 / G
-    ctx.saveGState()
-    ctx.translateBy(x: (size - G * scale) / 2, y: (size - G * scale) / 2)
-    ctx.scaleBy(x: scale, y: scale)
-    ctx.setLineWidth(strokeW)
-    drawGlyph(ctx, half: .upperLeft, fill: accent, stroke: screenWhite,
-              ghostOtherHalf: size >= 32)
-    ctx.restoreGState()
 }
 
 // MARK: - Output
@@ -206,7 +200,7 @@ func writeTemplatePDF(_ half: Half, to path: String) {
     ctx.scaleBy(x: k, y: k)
     ctx.translateBy(x: -G / 2, y: -G / 2)
     let black = CGColor(red: 0, green: 0, blue: 0, alpha: half == .none ? 0.45 : 1)
-    drawGlyph(ctx, half: half, fill: black, stroke: black, ghostOtherHalf: false)
+    drawGlyph(ctx, half: half, fill: black, stroke: black, unlit: nil)
     ctx.endPDFPage()
     ctx.closePDF()
     data.write(toFile: path, atomically: true)

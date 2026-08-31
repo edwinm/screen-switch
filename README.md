@@ -57,12 +57,16 @@ Mac notices and catches up on its own.
 git clone https://github.com/edwinm/screen-switch.git
 cd screen-switch
 ./build
-./install-agent
+open "Screen Switch.app"
 ```
 
 `build` compiles the menu bar app into `Screen Switch.app` and ad-hoc signs it.
-`install-agent` installs it as a login item and starts it, so the icon appears in
-your menu bar right away and comes back at every login.
+Opening it puts the icon in your menu bar; tick **Settings… → General → Start
+Screen Switch at login** to have it come back at every login.
+
+`./install-agent` is the other way to do that, from the command line. Use one or
+the other. See
+[Starting, stopping, and removing the app](#starting-stopping-and-removing-the-app).
 
 There is no download to grab: the app runs Homebrew binaries and drives DDC,
 which the App Sandbox forbids, so it is distributed as source you compile
@@ -147,6 +151,17 @@ find them.
 
 ### Starting, stopping, and removing the app
 
+**Settings… → General → Start Screen Switch at login** is the simple route. It
+appears in System Settings → General → Login Items under **Allow in the
+Background**, as *Screen Switch.app* with its own icon, where you can also
+switch it off. **Quit** in the menu quits it; open the app again to bring it
+back.
+
+The registration remembers where the app is, so if you move the checkout, turn
+the setting off and on again.
+
+The command line route does the same thing from outside the app:
+
 ```bash
 ./install-agent            # install as a login item, and start it
 ./install-agent start      # start it again after using Quit in the menu
@@ -155,13 +170,37 @@ find them.
 ./install-agent uninstall  # stop it and remove it from login items
 ```
 
-**Quit** in the menu stops it until your next login. To bring it back without
-logging out, use `install-agent start` (or just open `Screen Switch.app`).
+With the agent installed, **Quit** in the menu stops it until your next login. To
+bring it back without logging out, use `install-agent start` (or just open
+`Screen Switch.app`).
 
-Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item);
-launchd's own stdout/stderr to `~/Library/Logs/screen-switch.agent.log`.
+Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item).
+On the `install-agent` route, launchd's own stdout/stderr go to
+`~/Library/Logs/screen-switch.agent.log` as well; the checkbox's agent sends
+them to the unified log instead.
 
-### If the icon does not appear
+### Why the entry says "Screen Switch.app"
+
+Because Finder is set to show every filename extension — with that on, macOS
+appends `.app` to every application's name, and Login Items shows the same
+string for all of them. Turning off **Finder → Settings → Advanced → Show all
+filename extensions** drops the suffix everywhere, including here. Nothing in
+the app can override it.
+
+### Why the install-agent entry looks like a stray Unix binary
+
+Installed with `install-agent`, the Login Items row reads **ScreenSwitch** with
+a generic executable icon and "part of an unknown developer", rather than
+*Screen Switch.app* with its icon. That is the ad-hoc signature: the plist's
+`AssociatedBundleIdentifiers` only maps the job back to the app when the two
+share a Developer ID team, and an ad-hoc signature has no team, so macOS
+describes the program launchd runs instead.
+
+The checkbox in Settings has no such problem — the agent it registers is
+inside the app bundle, so the row is the app. If the tidy entry matters to you,
+use the checkbox and `./install-agent uninstall` the launchd job.
+
+### If the menu bar icon does not appear
 
 The menu bar has less room than it looks. On a notched MacBook Pro, status items
 cannot flow past the notch, so the only usable space is the strip to its *right* —
@@ -284,7 +323,8 @@ decision, departure is an event.
 `screen-switch` for the actual display work, so the shell script stays the single
 source of truth and the app is only the UI in front of it.
 
-Note that `launchctl kill SIGTERM` does *not* stop it: `KeepAlive` is set to
+Both routes end up as a launchd job, so this applies either way. Note that
+`launchctl kill SIGTERM` does *not* stop it: `KeepAlive` is set to
 `SuccessfulExit: false`, so a signal counts as an unsuccessful exit and launchd
 restarts it within seconds. That setting is what makes the menu's **Quit** work —
 a clean exit stays quit — so `install-agent stop` unloads the job with `bootout`
@@ -307,10 +347,11 @@ ScreenSwitch.swift      status item, menu, and the edge-triggered watcher
 Config.swift            reading and writing the config
 Displays.swift          display detection: displayplacer + m1ddc + CoreGraphics
 SettingsWindow.swift    the Settings window
+LoginItem.swift         the start-at-login setting (SMAppService)
 screen-switch           the shell tool that does the display work; usable alone
 lib.sh                  shared shell helpers
 build                   swiftc + codesign
-install-agent           login-item wiring
+install-agent           the command line alternative to the checkbox
 config.example.sh       an annotated config, if you would rather write one
 devices.example.conf    likewise for the machine list
 icons/                  app and menu bar icons, plus the script that renders them
