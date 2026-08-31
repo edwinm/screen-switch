@@ -66,6 +66,7 @@ final class SettingsWindowController: NSWindowController {
         snapshot = DisplayScanner.scan(config: config)
         buildPanes()
         seedDefaults()
+        seedThisMac()
         buildToolbar()
         window.delegate = self
         window.setFrameAutosaveName("ScreenSwitchSettings")
@@ -101,6 +102,41 @@ final class SettingsWindowController: NSWindowController {
         guard changed else { return }
         refreshControls()
         commitConfig()
+    }
+
+    /// The machine list cannot be detected: DDC reports which input is
+    /// *selected* and nothing about the others, and sweeping input codes to see
+    /// what answers is the one thing this project will not do -- on some panels
+    /// a wrong code drops the Mac's link entirely. See AGENTS.md.
+    ///
+    /// One row is knowable, though: whoever the monitor is showing now, which on
+    /// a first run is this Mac. Seeded only when the shared monitor is actually
+    /// attached, and only into an empty list, so a machine list someone has
+    /// already made is never touched.
+    private func seedThisMac() {
+        guard devices.isEmpty,
+              !config.sharedDisplayID.isEmpty,
+              snapshot.display(id: config.sharedDisplayID) != nil,
+              let code = currentMonitorInput() else { return }
+        devices = [Device(code: code, label: Self.thisMacName, mode: .extended)]
+        config.thisMacInput = code
+        reloadDevices()
+        commitDevices()
+        syncInputRoles()
+        log("seeded the machine list with this Mac on input \(code)")
+    }
+
+    private static var thisMacName: String {
+        let name = Host.current().localizedName ?? ""
+        return name.isEmpty ? "This Mac" : name
+    }
+
+    /// The live DDC reading, or nil if the monitor is not answering.
+    private func currentMonitorInput() -> String? {
+        let r = Shell.run(config.m1ddc, ["display", config.ddcTarget, "get", "input"])
+        let value = (r.out.components(separatedBy: .newlines).first ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        return ddcFailed(value) ? nil : value
     }
 
     // MARK: - Toolbar
@@ -317,15 +353,42 @@ final class SettingsWindowController: NSWindowController {
         addRemove.setToolTip("Add a machine", forSegment: 0)
         addRemove.setToolTip("Remove the selected machine", forSegment: 1)
 
+        // Detection can honestly fill in exactly one machine: whichever one the
+        // monitor is showing right now. That is this Mac if the user is looking
+        // at it, which is why the button says so rather than saying "scan".
+        let addThisMac = NSButton(title: "Add This Mac", target: self,
+                                  action: #selector(addThisMacDevice))
+        addThisMac.bezelStyle = .rounded
+        addThisMac.controlSize = .small
+        addThisMac.toolTip = "Read the input the monitor is showing now"
+
+        let controls = NSView()
+        controls.translatesAutoresizingMaskIntoConstraints = false
+        addRemove.translatesAutoresizingMaskIntoConstraints = false
+        addThisMac.translatesAutoresizingMaskIntoConstraints = false
+        controls.addSubview(addRemove)
+        controls.addSubview(addThisMac)
+        NSLayoutConstraint.activate([
+            controls.heightAnchor.constraint(equalTo: addThisMac.heightAnchor),
+            addRemove.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
+            addRemove.centerYAnchor.constraint(equalTo: controls.centerYAnchor),
+            addThisMac.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
+            addThisMac.centerYAnchor.constraint(equalTo: controls.centerYAnchor),
+        ])
+
         let stack = NSStackView(views: [
-            listBox, addRemove,
+            listBox, controls,
             secondary("Every machine that shares the monitor, in menu order. "
                     + "Click a name or an input code to change it. “This Mac” marks "
-                    + "the one you are sitting at."),
+                    + "the one you are sitting at, and “Add This Mac” reads the input "
+                    + "the monitor is on right now."),
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
+        // Only now do the two share an ancestor, which a cross-view constraint
+        // needs: the row of buttons spans the list it belongs to.
+        controls.widthAnchor.constraint(equalTo: listBox.widthAnchor).isActive = true
         return stack
     }
 
@@ -824,9 +887,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func useCurrentInput() {
-        let r = Shell.run(config.m1ddc, ["display", config.ddcTarget, "get", "input"])
-        let value = r.out.components(separatedBy: .newlines).first ?? ""
-        if ddcFailed(value) {
+        guard let value = currentMonitorInput() else {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "The monitor is not answering."
@@ -837,7 +898,30 @@ final class SettingsWindowController: NSWindowController {
             if let sheet = addSheet { alert.beginSheetModal(for: sheet) } else { alert.runModal() }
             return
         }
-        sheetCode?.stringValue = value.trimmingCharacters(in: .whitespaces)
+        sheetCode?.stringValue = value
+    }
+
+    /// Same reading as the Add sheet's button, straight into a row. An input
+    /// already in the list is marked as this Mac rather than added twice.
+    @objc private func addThisMacDevice() {
+        guard let code = currentMonitorInput() else {
+            present(error: "The monitor is not answering.",
+                    detail: "m1ddc could not read that display. Check the monitor is on and "
+                          + "connected, and that the shared monitor in Displays is the right one.")
+            return
+        }
+        if let existing = devices.firstIndex(where: { $0.code == code }) {
+            devices[existing].mode = .extended
+        } else {
+            devices.append(Device(code: code, label: Self.thisMacName, mode: .extended))
+        }
+        config.thisMacInput = code
+        reloadDevices()
+        commitDevices()
+        syncInputRoles()
+        if let row = devices.firstIndex(where: { $0.code == code }) {
+            devicesTable.selectRowIndexes([row], byExtendingSelection: false)
+        }
     }
 
     @objc private func cancelAddDevice() { endAddSheet() }
@@ -857,12 +941,11 @@ final class SettingsWindowController: NSWindowController {
         }
         let mode = Mode(config: sheetMode?.selectedItem?.representedObject as? String ?? "mirrored")
         devices.append(Device(code: code, label: name.isEmpty ? "Input \(code)" : name, mode: mode))
-        if mode == .extended, config.thisMacInput.isEmpty {
-            config.thisMacInput = code
-            commitConfig()
-        }
         reloadDevices()
         commitDevices()
+        // Both roles, not just THIS_MAC_INPUT: OTHER_INPUT is what
+        // `screen-switch toggle` reaches for, and it was being left empty.
+        syncInputRoles()
         endAddSheet()
     }
 

@@ -81,7 +81,10 @@ fills in almost everything. Two things are left for you:
 1. **Displays → Capture Current Arrangement.** Arrange your screens in System
    Settings the way you normally want them, with mirroring *off*, then capture.
    That is the layout Screen Switch returns to.
-2. **Devices → +.** Add each machine that shares the monitor. Switch the monitor
+2. **Devices → +.** This Mac is already in the list — the app reads the input
+   the monitor is on when it first runs, so if that row is missing or wrong,
+   **Add This Mac** re-reads it. Add each *other* machine that shares the
+   monitor: switch the monitor
    to that machine with its own buttons, click **Use Monitor's Current Input**,
    and the input code is read straight off the monitor — no probing, no guessing
    which number your panel uses for which port. Name it, choose whether that

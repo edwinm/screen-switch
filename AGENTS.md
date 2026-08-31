@@ -92,6 +92,22 @@ This is why the Settings window can exist, and it is worth not re-deriving:
   a parsed block. Note `NSScreen.screens` omits a mirrored monitor, so it is a
   name source only, never the enumeration.
 
+What it cannot get you is the **machine list**. There is no signal-presence VCP
+(below), so the only machine detection can name is whichever one the monitor is
+showing at that moment — one row, not a list. So first run seeds exactly that:
+`seedThisMac()` writes a single device from the live DDC reading, named after the
+computer, mode `extended`, and only into an *empty* list with the shared monitor
+actually attached. **Add This Mac** in the Devices pane does the same on demand,
+and marks an input already in the list rather than adding it twice. The other
+machines still need the physical switch plus **Use Monitor's Current Input**;
+that asymmetry is the hardware's, not the UI's. Never add a "scan" that sweeps
+input codes to fill the list — see the destructive-inputs note below.
+
+Every path that adds a machine now ends in `syncInputRoles()`. It used to be
+called only from the This Mac checkbox, so adding a mirrored machine through the
++ sheet left `OTHER_INPUT` empty and `screen-switch toggle` — the Shortcut path —
+with nothing to switch to.
+
 A Retina panel offers 130-odd modes. `offeredModes` reduces that to one entry per
 resolution at its best refresh rate, preferring scaled modes — a menu a person
 can read. Do not put the raw list in a popup.
