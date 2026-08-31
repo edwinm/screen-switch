@@ -1,20 +1,183 @@
-# mac-screen-switch
+<p align="center">
+  <img src="icons/AppIcon-1024.png" alt="Screen Switch" width="160">
+</p>
 
-Two machines, one monitor. Hand the monitor over to the other machine and get
-your Mac's windows back onto its own screen — from the menu bar, a hotkey, or
-automatically when the monitor's input changes.
+<h1 align="center">Screen Switch</h1>
 
-Apple Silicon only: `m1ddc` talks to the monitor over DDC/CI and does not support
-Intel Macs.
+<p align="center">
+  Two machines, one monitor. Hand the monitor over to the other machine and get
+  your Mac's windows back onto its own screen — from the menu bar, a hotkey, or
+  automatically when the monitor's input changes.
+</p>
+
+---
 
 ## The problem
 
-A Mac and some other machine — a work laptop, a desktop, a console — share one
-external monitor. Switching the monitor's input does not tell macOS anything: the
-Mac still believes the display is attached, so windows sit on a screen nobody can
-see. The usual fix is to turn on mirroring, but mirroring inherits the monitor's
-resolution, which is unusable on a laptop screen — so it also means a trip to
-System Settings to fix that. Then all of it again in reverse.
+You have a Mac and one other machine — a work laptop, a desktop, a console — and
+they share a single external monitor. You switch the monitor over to the other
+machine with its buttons, and now half your Mac is invisible: macOS still thinks
+the big display is there, so windows sit on a screen nobody can look at. You drag
+them back one by one, or you turn on mirroring — which makes your laptop screen
+adopt the monitor's resolution and turns everything tiny, so you head into System
+Settings to fix *that*. Then you do the whole dance again in reverse when you
+switch back.
+
+Screen Switch makes it one click. Pick a machine from the menu bar and the
+monitor switches to it while your Mac rearranges itself to match — mirrored onto
+your own screen at your own resolution when the monitor is away, back to your
+normal arrangement when it returns. Switch inputs at the monitor itself and the
+Mac notices and catches up on its own.
+
+**Apple Silicon Macs only.** Screen Switch talks to the monitor over DDC/CI using
+`m1ddc`, which does not support Intel Macs.
+
+## Install
+
+### Prerequisites
+
+- An Apple Silicon Mac
+- An external monitor that supports DDC/CI input switching (most do)
+- [Homebrew](https://brew.sh)
+- Xcode command line tools, for the Swift compiler:
+
+  ```bash
+  xcode-select --install
+  ```
+
+- Two command line tools, both in homebrew-core — no tap needed:
+
+  ```bash
+  brew install displayplacer m1ddc
+  ```
+
+### Build and install
+
+```bash
+git clone https://github.com/edwinm/screen-switch.git
+cd screen-switch
+./build
+./install-agent
+```
+
+`build` compiles the menu bar app into `Screen Switch.app` and ad-hoc signs it.
+`install-agent` installs it as a login item and starts it, so the icon appears in
+your menu bar right away and comes back at every login.
+
+There is no download to grab: the app runs Homebrew binaries and drives DDC,
+which the App Sandbox forbids, so it is distributed as source you compile
+yourself. See [It is not sandboxed, and not notarised](#it-is-not-sandboxed-and-not-notarised)
+for what that means in practice.
+
+### First-time setup
+
+Open **Settings…** from the menu bar icon. It detects your displays by name and
+fills in almost everything. Two things are left for you:
+
+1. **Displays → Capture Current Arrangement.** Arrange your screens in System
+   Settings the way you normally want them, with mirroring *off*, then capture.
+   That is the layout Screen Switch returns to.
+2. **Devices → +.** Add each machine that shares the monitor. Switch the monitor
+   to that machine with its own buttons, click **Use Monitor's Current Input**,
+   and the input code is read straight off the monitor — no probing, no guessing
+   which number your panel uses for which port. Name it, choose whether that
+   machine means *Extended* (your arrangement — this Mac) or *Mirrored*
+   (everything on your own screen), and you are done.
+
+Settings apply as you make them; there is no Save button and nothing needs a
+restart. Your configuration lives in `~/.config/screen-switch/`, outside the
+checkout, so pulling a new version never touches it.
+
+## Use
+
+### From the menu bar
+
+Click the icon and you get a menu of your machines, with a checkmark on whichever
+one the monitor is currently showing, plus the current display mode. Pick a
+machine and the monitor switches to it and the Mac applies the matching layout.
+The menu also has **Settings…**, **Open Log**, and **Quit**.
+
+The icon itself shows the state at a glance: extended, mirrored, or monitor
+unreachable.
+
+You do not have to use the menu. Switch inputs with the monitor's own buttons and
+the app notices within a few seconds and adjusts the Mac to match.
+
+### From the command line
+
+The same work is available as a shell tool you can run directly:
+
+```bash
+./screen-switch toggle
+```
+
+| verb | does |
+| --- | --- |
+| `toggle` | extended → mirrored, or back. This is what a hotkey would run. |
+| `mirrored` | mirror onto your own screen, then hand the monitor over |
+| `extended` | restore your captured arrangement |
+| `status` | prints `extended` or `mirrored` |
+| `input` | prints the monitor's current input code; `input <code>` sets it |
+| `discover` | dumps the raw values Settings… reads |
+
+`mac` and `work` still work as aliases for `extended` and `mirrored`.
+
+If the shared monitor is not connected at all, every verb is a clean no-op.
+
+### A keyboard shortcut
+
+The menu bar app covers the clicking. If you also want a key combo, wrap the
+script in a Shortcut:
+
+1. Shortcuts → Settings → Advanced → enable **Allow Running Scripts**. Nothing
+   runs until this is on.
+2. New shortcut named e.g. **Toggle Monitor**, containing a single **Run Shell
+   Script** action with the full path to `screen-switch` in this checkout, plus
+   `toggle`. Leave the shell as `/bin/bash` and "Pass Input" as *to stdin*.
+3. In the shortcut's details pane, set a **keyboard shortcut**.
+4. Run it once and approve the permission prompt.
+
+Shortcuts runs scripts with a minimal `PATH`, which is why the config stores
+absolute paths to `displayplacer` and `m1ddc` rather than relying on the shell to
+find them.
+
+### Starting, stopping, and removing the app
+
+```bash
+./install-agent            # install as a login item, and start it
+./install-agent start      # start it again after using Quit in the menu
+./install-agent stop       # stop it until next login
+./install-agent status     # running? installed?
+./install-agent uninstall  # stop it and remove it from login items
+```
+
+**Quit** in the menu stops it until your next login. To bring it back without
+logging out, use `install-agent start` (or just open `Screen Switch.app`).
+
+Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item);
+launchd's own stdout/stderr to `~/Library/Logs/screen-switch.agent.log`.
+
+### If the icon does not appear
+
+The menu bar has less room than it looks. On a notched MacBook Pro, status items
+cannot flow past the notch, so the only usable space is the strip to its *right* —
+the wide gap to the left of the notch is not available. When that strip is full,
+macOS silently drops new items: the item still reports `isVisible = true` with a
+valid button, it simply is not drawn, and there is no error anywhere.
+
+If the icon is missing, remove another menu bar icon to free a slot. That is the
+whole fix.
+
+## Known limitation
+
+Window positions are not preserved across a mirror round-trip. macOS squeezes
+windows onto the smaller logical desktop and does not put them back afterwards.
+Restoring window geometry is a much bigger job and is deliberately not attempted
+here.
+
+---
+
+# Technical details
 
 ## How it works
 
@@ -35,59 +198,11 @@ get wrong by hand.
 `m1ddc` then sends the DDC/CI input-select command (VCP `0x60`) to move the
 monitor over to the other machine.
 
-## Setup
-
-```bash
-brew install displayplacer m1ddc
-./build
-./install-agent
-```
-
-Both tools are in homebrew-core — no tap needed. `build` compiles the menu bar
-app and ad-hoc signs it; `install-agent` installs it as a login item and starts
-it.
-
-Then open **Settings…** from the menu bar icon. It detects your displays by name
-and fills in almost everything; two things are left for you:
-
-1. **Displays → Capture Current Arrangement.** Arrange your screens in System
-   Settings the way you normally want them, with mirroring *off*, then capture.
-   That is the layout Screen Switch returns to.
-2. **Devices → +.** Add each machine that shares the monitor. Switch the monitor
-   to that machine with its own buttons, click **Use Monitor's Current Input**,
-   and the input code is read straight off the monitor — no probing, no guessing
-   which number your panel uses for which port. Name it, choose whether that
-   machine means *Extended* (your arrangement — this Mac) or *Mirrored*
-   (everything on your own screen), and you are done.
-
-Settings apply as you make them; there is no Save button and nothing needs a
-restart. Your configuration lives in `~/.config/screen-switch/`, outside the
-checkout, so pulling a new version never touches it.
-
-## Use
-
-```bash
-./screen-switch toggle     # flip whichever way you are not
-```
-
-| verb | does |
-| --- | --- |
-| `toggle` | extended → mirrored, or back. This is what a hotkey would run. |
-| `mirrored` | mirror onto your own screen, then hand the monitor over |
-| `extended` | restore your captured arrangement |
-| `status` | prints `extended` or `mirrored` |
-| `input` | prints the monitor's current input code; `input <code>` sets it |
-| `discover` | dumps the raw values Settings… reads |
-
-`mac` and `work` still work as aliases for `extended` and `mirrored`.
-
 Going back to extended, the script tries to pull the monitor's input back over
 DDC. Whether that works is a property of your monitor: some keep answering DDC
 while showing another machine, some drop the channel with the picture. If yours
 does not cooperate, press its input button and then run the command — or turn the
 attempt off in Settings → General.
-
-If the shared monitor is not connected at all, every verb is a clean no-op.
 
 ## Input codes are per-monitor
 
@@ -134,57 +249,6 @@ which machine currently owns the monitor. That is still the best available signa
 for automation, and it needs no software on the other machine — but it follows
 the *monitor's* input selection, not any machine's power state.
 
-## The menu bar app
-
-`Screen Switch.app` is a native AppKit menu bar app: an icon with a menu of your
-machines, a checkmark on whichever one the monitor is currently showing, and the
-current display mode. Picking a machine switches the monitor's input and applies
-the matching layout.
-
-```bash
-./install-agent            # install as a login item, and start it
-./install-agent start      # start it again after using Quit in the menu
-./install-agent stop       # stop it until next login
-./install-agent status     # running? installed?
-./install-agent uninstall  # stop it and remove it from login items
-```
-
-**Quit** in the menu stops it until your next login. To bring it back without
-logging out, use `install-agent start` (or just open `Screen Switch.app`).
-
-Note that `launchctl kill SIGTERM` does *not* stop it: `KeepAlive` is set to
-`SuccessfulExit: false`, so a signal counts as an unsuccessful exit and launchd
-restarts it within seconds. That setting is what makes the menu's **Quit** work —
-a clean exit stays quit — so `stop` unloads the job with `bootout` instead. The
-plist stays in place, so it returns at the next login either way.
-
-It shells out to `screen-switch` for the actual display work, so the shell script
-stays the single source of truth and the app is only the UI in front of it. It
-also follows the monitor on its own: switch inputs at the monitor itself and the
-Mac catches up within a few seconds.
-
-Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item);
-launchd's own stdout/stderr to `~/Library/Logs/screen-switch.agent.log`.
-
-### It is not sandboxed, and not notarised
-
-The app runs Homebrew binaries and drives DDC, which the App Sandbox forbids, so
-it is distributed as source you compile yourself and `build` signs it ad-hoc.
-That is also why there is no download: an ad-hoc signed binary from a stranger is
-not something you should run, and a notarised one would need a paid Developer ID
-for a utility this small. `Developer Name: (null)` in Login Items is expected.
-
-### If the icon does not appear
-
-The menu bar has less room than it looks. On a notched MacBook Pro, status items
-cannot flow past the notch, so the only usable space is the strip to its *right* —
-the wide gap to the left of the notch is not available. When that strip is full,
-macOS silently drops new items: the item still reports `isVisible = true` with a
-valid button, it simply is not drawn, and there is no error anywhere.
-
-If the icon is missing, remove another menu bar icon to free a slot. That is the
-whole fix.
-
 ## Why it is edge-triggered
 
 The app acts only when the input actually *changes* — never on steady state. That
@@ -210,22 +274,25 @@ So starting work needs one gesture — the menu, or the monitor's own buttons �
 ending it needs none. That asymmetry is worth knowing about: arrival is a
 decision, departure is an event.
 
-## Optional: a keyboard shortcut
+## The agent and launchd
 
-The menu bar app covers the clicking. If you also want a key combo, wrap the
-script in a Shortcut:
+`Screen Switch.app` is a native AppKit menu bar app. It shells out to
+`screen-switch` for the actual display work, so the shell script stays the single
+source of truth and the app is only the UI in front of it.
 
-1. Shortcuts → Settings → Advanced → enable **Allow Running Scripts**. Nothing
-   runs until this is on.
-2. New shortcut named e.g. **Toggle Monitor**, containing a single **Run Shell
-   Script** action with the full path to `screen-switch` in this checkout, plus
-   `toggle`. Leave the shell as `/bin/bash` and "Pass Input" as *to stdin*.
-3. In the shortcut's details pane, set a **keyboard shortcut**.
-4. Run it once and approve the permission prompt.
+Note that `launchctl kill SIGTERM` does *not* stop it: `KeepAlive` is set to
+`SuccessfulExit: false`, so a signal counts as an unsuccessful exit and launchd
+restarts it within seconds. That setting is what makes the menu's **Quit** work —
+a clean exit stays quit — so `install-agent stop` unloads the job with `bootout`
+instead. The plist stays in place, so it returns at the next login either way.
 
-Shortcuts runs scripts with a minimal `PATH`, which is why the config stores
-absolute paths to `displayplacer` and `m1ddc` rather than relying on the shell to
-find them.
+## It is not sandboxed, and not notarised
+
+The app runs Homebrew binaries and drives DDC, which the App Sandbox forbids, so
+it is distributed as source you compile yourself and `build` signs it ad-hoc.
+That is also why there is no download: an ad-hoc signed binary from a stranger is
+not something you should run, and a notarised one would need a paid Developer ID
+for a utility this small. `Developer Name: (null)` in Login Items is expected.
 
 ## Files
 
@@ -242,6 +309,7 @@ build                   swiftc + codesign
 install-agent           login-item wiring
 config.example.sh       an annotated config, if you would rather write one
 devices.example.conf    likewise for the machine list
+icons/                  app and menu bar icons, plus the script that renders them
 ```
 
 Your own settings, written by Settings… and read by the shell tool:
@@ -253,13 +321,6 @@ Your own settings, written by Settings… and read by the shell tool:
 
 `screen-switch` also accepts `$SCREEN_SWITCH_CONFIG`, and falls back to a
 `config.sh` next to itself, which is handy for testing.
-
-## Known limitation
-
-Window positions are not preserved across a mirror round-trip. macOS squeezes
-windows onto the smaller logical desktop and does not put them back afterwards.
-Restoring window geometry is a much bigger job and is deliberately not attempted
-here.
 
 ## License
 
