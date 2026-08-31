@@ -35,6 +35,8 @@ LoginItem.swift         SMAppService wrapper behind the "start at login" checkbo
 screen-switch           shell tool doing the real display work; usable alone
 lib.sh                  shared shell helpers
 build                   swiftc + codesign
+test                    compiles the sources with tests/ and runs them
+tests/main.swift        the suite: parsers, round trips, the mirror-order rule
 install-agent           the command line alternative to the checkbox
 org.bitstorm.screen-switch.plist.template   rendered per machine by install-agent
 org.bitstorm.screen-switch.login.plist      bundled agent; build copies it into the app
@@ -242,6 +244,45 @@ finds the shell tool via `$SCREEN_SWITCH_DIR`, then the bundle's parent director
 - **`rebuildMenu()` must not force-unwrap the status item.** macOS silently
   declines to draw a status item when the menu bar is full (see the notch note),
   and the test harness has no status item at all.
+
+## Nothing blocks the main thread
+
+A reading is two subprocesses — a DDC read and `screen-switch status` — about
+130ms together on a good day and unbounded on a bad one, because a monitor that
+has stopped answering DDC does not answer quickly. Both used to run on the main
+thread, on a timer.
+
+Now `poll()` dispatches, `AppDelegate.take(config:)` does the reading off-main
+and returns plain data, and `apply(reading:updatingInput:)` puts it into the
+state machine on main, where the state lives. Keep that split: the background
+half must stay free of `self` state, and the logging with it (`noteStatusFailure`
+is called from the main half for this reason).
+
+The menu draws from `lastMode`, the last reading's answer, so opening it never
+waits on a subprocess; `menuWillOpen` refreshes behind the open menu and the
+items update in place. `sample` on the running app is the way to check this:
+`AppDelegate.take` should appear under a `utility-qos` thread and never under
+`com.apple.main-thread`.
+
+## Tests
+
+`./test` compiles every source except `main.swift` together with
+`tests/main.swift` and runs it. No XCTest, because there is no Xcode project:
+it is a program that prints failures and exits non-zero.
+
+It points `XDG_CONFIG_HOME` **and `SCREEN_SWITCH_LOG`** at a scratch directory.
+The second one exists because `NSHomeDirectory()` ignores `$HOME`, so before
+`Paths.logFile` took an override there was no way to test the log trimming
+without writing to the real log — and the trim then eats the real history. That
+happened. Anything that writes to a path must be overridable before it is
+tested.
+
+What is worth testing here is what the suite already covers: the bash-subset
+parser (including the `origin:(0,0)` trap), the config round trip and the
+migration from the old key names, the devices round trip with a `|` in a name,
+`displayplacer` and `m1ddc` output parsing, `ddcFailed` against m1ddc's real
+failure string, and the rule that the Mac's screen comes first in every mirror
+candidate. No display tools are run, so it works on any machine.
 
 ## Design invariant: edge-triggered, never level-triggered
 
@@ -470,7 +511,9 @@ also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
 ```
 ~/.config/screen-switch/config.sh         settings (Settings… writes this)
 ~/.config/screen-switch/devices.conf      the machine list
-~/Library/Logs/screen-switch.log          app activity (the Open Log menu item)
+~/Library/Logs/screen-switch.log          app activity (the Open Log menu item),
+                                          halved when it passes 256 KB;
+                                          SCREEN_SWITCH_LOG redirects it
 ~/Library/Logs/screen-switch.agent.log    launchd stdout/stderr (install-agent only)
 ~/Library/LaunchAgents/org.bitstorm.screen-switch.plist   rendered at install
 ```

@@ -61,6 +61,7 @@ open "Screen Switch.app"
 ```
 
 `build` compiles the menu bar app into `Screen Switch.app` and ad-hoc signs it.
+(`./test` runs the test suite, if you are changing anything.)
 Opening it puts the icon in your menu bar; tick **Settings… → General → Start
 Screen Switch at login** to have it come back at every login.
 
@@ -354,6 +355,7 @@ LoginItem.swift         the start-at-login setting (SMAppService)
 screen-switch           the shell tool that does the display work; usable alone
 lib.sh                  shared shell helpers
 build                   swiftc + codesign
+test                    ./test -- the test suite, needs no monitor
 install-agent           the command line alternative to the checkbox
 config.example.sh       an annotated config, if you would rather write one
 devices.example.conf    likewise for the machine list

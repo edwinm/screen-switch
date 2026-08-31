@@ -55,6 +55,14 @@ source "${DIR}/lib.sh"
 set_input() {
   local code="$1"
 
+  # An unset code means the machine list has no entry for that role yet. Saying
+  # so beats handing m1ddc an empty argument and reporting that the monitor
+  # declined it.
+  if [[ -z "$code" ]]; then
+    echo "  no input code configured for that machine -- add it in Settings... > Devices" >&2
+    return 1
+  fi
+
   for bad in "${BLOCKED_INPUTS[@]:-}"; do
     if [[ -n "$bad" && "$code" == "$bad" ]]; then
       echo "  refusing to select input $code -- it is in BLOCKED_INPUTS" >&2
@@ -130,11 +138,16 @@ do_discover() {
   echo "=== displayplacer list (modes omitted) ==="
   "$DISPLAYPLACER" list | grep -vE '^  mode |^Resolutions for'
   echo
-  echo "=== m1ddc displays ==="
-  "$M1DDC" display list 2>&1 || true
-  echo
-  echo "=== current monitor input ==="
-  "$M1DDC" display "$DDC_DISPLAY" get input 2>&1 || true
+  if [[ -x "$M1DDC" ]]; then
+    echo "=== m1ddc displays ==="
+    "$M1DDC" display list 2>&1 || true
+    echo
+    echo "=== current monitor input ==="
+    "$M1DDC" display "$DDC_DISPLAY" get input 2>&1 || true
+  else
+    echo "=== m1ddc ==="
+    echo "not found at ${M1DDC:-(unset)} -- brew install m1ddc, or set M1DDC in the config"
+  fi
   echo
   echo "Settings... in the menu bar app turns all of this into a config for you."
   echo "To do it by hand, copy the ids and the generated command above into"
@@ -153,8 +166,10 @@ case "$cmd" in
     # `input` prints the monitor's current source; `input <code>` sets it.
     if [[ -n "${2:-}" ]]; then
       set_input "$2"
-    else
+    elif [[ -x "$M1DDC" ]]; then
       "$M1DDC" display "$DDC_DISPLAY" get input
+    else
+      die "m1ddc not found at ${M1DDC:-(unset)} (brew install m1ddc)"
     fi
     ;;
   discover)

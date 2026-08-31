@@ -79,8 +79,16 @@ enum Paths {
 
     static var configFile: URL { configDir.appendingPathComponent("config.sh") }
     static var devicesFile: URL { configDir.appendingPathComponent("devices.conf") }
+    /// SCREEN_SWITCH_LOG redirects it. Note that NSHomeDirectory() ignores
+    /// $HOME, so without an override of its own there is no way to point this
+    /// somewhere scratch -- which is how a test of the log trimming came to
+    /// overwrite a real log.
     static var logFile: URL {
-        URL(fileURLWithPath: NSHomeDirectory() + "/Library/Logs/screen-switch.log")
+        let env = ProcessInfo.processInfo.environment
+        if let override = env["SCREEN_SWITCH_LOG"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory() + "/Library/Logs/screen-switch.log")
     }
 
     /// Where `screen-switch` and `lib.sh` live. Nothing is hardcoded: the bundle

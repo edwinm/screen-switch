@@ -8,6 +8,11 @@ import AppKit
 
 // The log is what the "Open Log" menu item shows, and the only record of why the
 // displays changed while you were not looking.
+/// Past this the log is halved, oldest first. A switch is two or three lines,
+/// so this is months of them -- but a monitor flapping on and off writes a line
+/// every few seconds, and nothing else ever truncates the file.
+private let logLimit = 256 * 1024
+
 func log(_ msg: String) {
     let df = DateFormatter()
     df.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -16,13 +21,23 @@ func log(_ msg: String) {
     let url = Paths.logFile
     if let fh = try? FileHandle(forWritingTo: url) {
         defer { try? fh.close() }
-        _ = try? fh.seekToEnd()
+        let end = (try? fh.seekToEnd()) ?? 0
+        if end > logLimit { trimLog(url) ; _ = try? fh.seekToEnd() }
         try? fh.write(contentsOf: data)
     } else {
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url)
     }
+}
+
+/// Keeps the newest half, from the first whole line. Rewritten in place rather
+/// than rolled over: one log file is what the Open Log menu item points at.
+private func trimLog(_ url: URL) {
+    guard let data = try? Data(contentsOf: url) else { return }
+    var tail = data.suffix(logLimit / 2)
+    if let newline = tail.firstIndex(of: 0x0A) { tail = tail[(newline + 1)...] }
+    try? Data(tail).write(to: url, options: .atomic)
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -44,6 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusFailure: String?
     let debounce = 2
     var busy = false
+    /// One reading at a time. A poll that is still out when the next tick fires
+    /// would otherwise queue up behind it -- and each one runs two subprocesses.
+    private var reading = false
+    /// What the last reading found, so drawing the menu never has to wait for a
+    /// subprocess. Nil means nobody has managed to read it yet.
+    private var lastMode: Mode?
+
+    /// Everything one reading learns, gathered off the main thread. Plain data:
+    /// the state machine and the logging stay on main, where the state lives.
+    private struct Reading {
+        var input: String?
+        var mode: Mode?
+        var modeProblem: String?
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         reloadConfig()
@@ -83,38 +112,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Talking to the tools
 
-    func readInput() -> String? {
+    func readInput() -> String? { Self.readInput(config: config) }
+
+    private static func readInput(config: Config) -> String? {
         let r = Shell.run(config.m1ddc, ["display", config.ddcTarget, "get", "input"])
         let first = r.out.components(separatedBy: .newlines).first ?? ""
         return ddcFailed(first) ? nil : first
     }
 
-    /// nil means "could not tell" -- the script did not run, or said something
-    /// that is not a mode. Mode(config:) must not be used here: its default is
-    /// .mirrored, so a missing shell tool used to read as a confident "mirrored"
-    /// in the menu and in poll()'s comparison.
-    func currentMode() -> Mode? {
-        let r = Shell.run("/bin/bash", [Paths.screenSwitch, "status"])
-        let out = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard r.ok, let mode = Mode(exactly: out) else {
-            noteStatusFailure(r.ok ? "status said '\(out)'" : shellProblem(r))
-            return nil
+    /// The two subprocesses a tick needs -- a DDC read and the display mode --
+    /// about 130ms of them, which is why this never runs on the main thread.
+    private static func take(config: Config) -> Reading {
+        var r = Reading(input: readInput(config: config))
+        let status = Shell.run("/bin/bash", [Paths.screenSwitch, "status"])
+        let out = status.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        if status.ok, let mode = Mode(exactly: out) {
+            r.mode = mode
+        } else {
+            r.modeProblem = status.ok ? "status said '\(out)'" : shellProblem(status)
         }
-        statusFailure = nil
-        return mode
+        return r
+    }
+
+    /// The display mode as of the last reading. Nil means "could not tell" --
+    /// the script did not run, or said something that is not a mode. Note what
+    /// this is *not*: Mode(config:) defaults unknown text to .mirrored, so
+    /// parsing `screen-switch status` with it turned a missing shell tool into a
+    /// confident "mirrored" in the menu and in poll()'s comparison.
+    func currentMode() -> Mode? { lastMode }
+
+    /// Reads the display mode again and redraws. Used where the answer has to be
+    /// fresher than the poll interval -- opening the menu, finishing a switch.
+    func refreshMode(then done: (() -> Void)? = nil) {
+        let cfg = config
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = Self.take(config: cfg)
+            DispatchQueue.main.async {
+                self.apply(reading: r, updatingInput: false)
+                done?()
+            }
+        }
     }
 
     /// The script's failures are worth exactly one log line each, not one per
-    /// poll: rebuildMenu() runs on every poll and every menu open.
-    private func noteStatusFailure(_ reason: String) {
+    /// reading: a tick and every menu opening both take one.
+    private func noteStatusFailure(_ reason: String?) {
         guard statusFailure != reason else { return }
         statusFailure = reason
-        log("cannot read the display mode: \(reason)")
+        if let reason { log("cannot read the display mode: \(reason)") }
     }
 
     /// What went wrong, in the order worth checking: a missing script beats
     /// whatever bash printed about it.
-    private func shellProblem(_ r: (out: String, ok: Bool)) -> String {
+    private static func shellProblem(_ r: (out: String, ok: Bool)) -> String {
         if !FileManager.default.isExecutableFile(atPath: Paths.screenSwitch) {
             return "screen-switch is not at \(Paths.screenSwitch)"
         }
@@ -128,15 +178,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runScript(_ args: [String], env: [String: String] = [:],
                            what: String) -> Bool {
         let r = Shell.run("/bin/bash", [Paths.screenSwitch] + args, env: env)
-        if !r.ok { log("  \(what) failed: \(shellProblem(r))") }
+        if !r.ok { log("  \(what) failed: \(Self.shellProblem(r))") }
         return r.ok
     }
 
     // MARK: - Following the monitor
 
+    /// Takes a reading off the main thread, then decides on it here. The two
+    /// subprocesses behind a reading are ~130ms of blocking on a good day and
+    /// unbounded on a bad one -- a monitor that has stopped answering DDC --
+    /// which is no business of a thread that has a menu bar to draw.
     func poll() {
-        guard !busy, config.isConfigured else { return }
-        let value = readInput()
+        guard !busy, !reading, config.isConfigured else { return }
+        reading = true
+        let cfg = config
+        DispatchQueue.global(qos: .utility).async {
+            let r = Self.take(config: cfg)
+            DispatchQueue.main.async {
+                self.reading = false
+                self.apply(reading: r, updatingInput: true)
+            }
+        }
+    }
+
+    /// Everything a reading changes, on the main thread where the state lives.
+    /// `updatingInput` is false for the mode-only refreshes, which must not
+    /// disturb the edge detector's debounce.
+    private func apply(reading r: Reading, updatingInput: Bool) {
+        // Every reading ends in a redraw, including the ones the debounce
+        // swallows: drawing is cheap now that it reads the cache rather than
+        // waiting on `screen-switch status`.
+        defer { rebuildMenu() }
+        lastMode = r.mode
+        noteStatusFailure(r.modeProblem)
+        guard updatingInput else { return }
+
+        let value = r.input
         let reachable = value != nil
 
         // Debounce: a reading has to repeat before it is believed. Reads taken
@@ -147,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !reachable && lastReachable { log("DDC unreachable") }
 
-        defer { lastInput = value; lastReachable = reachable; rebuildMenu() }
+        defer { lastInput = value; lastReachable = reachable }
         guard let v = value else { return }
 
         // Two edges matter: the input changed, or DDC came back after being
@@ -160,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if changed { log("input \(lastInput ?? "?") -> \(v)") }
         else { log("DDC back, input \(v) -- reconciling") }
 
-        if let dev = devices.first(where: { $0.code == v }), dev.mode != currentMode() {
+        if let dev = devices.first(where: { $0.code == v }), dev.mode != lastMode {
             log("  applying '\(dev.mode.rawValue)' mode")
             apply(mode: dev.mode)
         }
@@ -170,7 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         busy = true
         DispatchQueue.global(qos: .userInitiated).async {
             self.runScript([mode.rawValue], what: mode.rawValue)
-            DispatchQueue.main.async { self.busy = false; self.rebuildMenu() }
+            DispatchQueue.main.async {
+                self.busy = false
+                self.refreshMode()
+            }
         }
     }
 
@@ -218,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.busy = false
                 self.lastInput = dev.code
-                self.rebuildMenu()
+                self.refreshMode()
             }
         }
     }
@@ -379,5 +459,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSMenuDelegate {
-    func menuWillOpen(_ menu: NSMenu) { rebuildMenu() }
+    /// Draw from the last reading straight away -- a menu must not wait on a
+    /// subprocess -- and refresh behind it. The items update in place a moment
+    /// later if the answer moved.
+    func menuWillOpen(_ menu: NSMenu) {
+        rebuildMenu()
+        refreshMode()
+    }
 }

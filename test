@@ -1,0 +1,27 @@
+#!/bin/bash
+# test -- compile the sources together with tests/main.swift and run them.
+#
+# No Xcode project here, so no XCTest either: the suite is a plain program that
+# prints failures and exits non-zero. XDG_CONFIG_HOME points somewhere scratch,
+# so a test run can never write over your real configuration.
+set -uo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+command -v swiftc >/dev/null || {
+  echo "swiftc not found -- install the Xcode command line tools: xcode-select --install" >&2
+  exit 1
+}
+
+# Everything except main.swift, whose top-level code is the app's entry point.
+swiftc -swift-version 5 -o "${WORK}/tests" \
+  "${DIR}/Config.swift" \
+  "${DIR}/Displays.swift" \
+  "${DIR}/LoginItem.swift" \
+  "${DIR}/ScreenSwitch.swift" \
+  "${DIR}/SettingsWindow.swift" \
+  "${DIR}/tests/main.swift" || exit 1
+
+XDG_CONFIG_HOME="${WORK}/config" SCREEN_SWITCH_LOG="${WORK}/screen-switch.log" "${WORK}/tests"

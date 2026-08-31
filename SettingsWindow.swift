@@ -1056,6 +1056,12 @@ extension SettingsWindowController: NSToolbarDelegate {
 
 extension SettingsWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
+        // This window holds its own copy of the config, taken when it was built.
+        // Anything that changed it since -- the first-run seeding, a device
+        // picked from the menu -- is on the app, so take those back before
+        // redrawing, or the next commit here writes a stale copy over them.
+        config = app.config
+        devices = app.devices
         // Displays get plugged in while the window is open; pick them up rather
         // than making the user find Refresh.
         snapshot = DisplayScanner.scan(config: config)
