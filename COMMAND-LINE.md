@@ -5,7 +5,8 @@ it: every display change the app makes is `screen-switch` doing the work. So the
 tool is usable on its own, and this is what it does.
 
 Installing — Homebrew dependencies, `./build` — is in the
-[README](README.md#install). The app's own settings live in
+[README](README.md#install), and the reasoning behind all of this is in
+[Technical details](TECHNICAL.md). The app's own settings live in
 **Settings…**; `screen-switch` reads the same configuration file.
 
 ## screen-switch
@@ -31,7 +32,7 @@ If the shared monitor is not connected at all, every verb is a clean no-op.
 is what the app's menu runs too: it refuses anything in **Settings → Advanced →
 Never select inputs**, and it verifies the switch by reading the input back
 rather than trusting the exit code. See
-[Some inputs can strand you](README.md#some-inputs-can-strand-you) for why that
+[Some inputs can strand you](TECHNICAL.md#some-inputs-can-strand-you) for why that
 matters.
 
 ### Where it reads its configuration

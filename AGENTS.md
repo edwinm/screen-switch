@@ -4,10 +4,11 @@ Orientation for a new session picking up this project. Read this before touching
 anything — several of the facts below cost a broken display to learn, and one of
 them will strand a user's Mac if you rediscover it the hard way.
 
-`README.md` is the user-facing doc for the app; `COMMAND-LINE.md` is the same
-for the shell tools, and everything about `screen-switch` verbs, the Shortcuts
-recipe and `install-agent` lives there rather than in the README. This file is
-the working context.
+User-facing docs are split three ways: `README.md` is the app, `COMMAND-LINE.md`
+the shell tools, `TECHNICAL.md` how it works and what the hardware will not do.
+Keep them that way — the README is for someone installing a menu bar app, and it
+had drifted into being all three. This file is the working context, and is not
+one of them.
 
 ## What this is
 
@@ -44,6 +45,7 @@ install-agent           the command line alternative to the checkbox
 org.bitstorm.screen-switch.plist.template   rendered per machine by install-agent
 org.bitstorm.screen-switch.login.plist      bundled agent; build copies it into the app
 COMMAND-LINE.md         user doc for the shell tools
+TECHNICAL.md            user doc for how it works and why
 config.example.sh       annotated reference config
 devices.example.conf    annotated reference machine list
 ```
