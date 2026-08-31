@@ -1,0 +1,13 @@
+# Your own settings live in ~/.config/screen-switch/. A repo-local copy is only
+# for development, and is never yours to publish.
+config.sh
+devices.conf
+
+# Built by ./build -- everyone compiles their own.
+Screen Switch.app/Contents/MacOS/ScreenSwitch
+Screen Switch.app/Contents/_CodeSignature/
+# Copied in from icons/, which is the source of record.
+Screen Switch.app/Contents/Resources/
+
+.DS_Store
+.idea/

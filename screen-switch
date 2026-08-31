@@ -1,0 +1,182 @@
+#!/bin/bash
+#
+# screen-switch -- flip between extended mode (your normal arrangement) and
+# mirrored mode (everything on your own screen, monitor handed to another
+# machine).
+#
+# Usage: screen-switch [toggle|mirrored|extended|status|input [code]|discover]
+
+set -uo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+die() { echo "screen-switch: $*" >&2; exit 1; }
+
+# --- config ----------------------------------------------------------------
+# Your settings live outside the checkout so a `git pull` cannot touch them, and
+# so nothing personal is ever committed. A repo-local config.sh still wins
+# nothing but development convenience -- it is gitignored.
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/screen-switch"
+for candidate in \
+  "${SCREEN_SWITCH_CONFIG:-}" \
+  "${CONFIG_DIR}/config.sh" \
+  "${DIR}/config.sh"
+do
+  [[ -n "$candidate" && -r "$candidate" ]] || continue
+  CONFIG="$candidate"
+  break
+done
+
+if [[ -z "${CONFIG:-}" ]]; then
+  cat >&2 <<EOF
+screen-switch: no configuration found.
+
+Open the menu bar app and use Settings... -- it detects your displays and writes
+the config for you. Or start from the example:
+
+  mkdir -p "${CONFIG_DIR}"
+  cp "${DIR}/config.example.sh" "${CONFIG_DIR}/config.sh"
+  cp "${DIR}/devices.example.conf" "${CONFIG_DIR}/devices.conf"
+EOF
+  exit 1
+fi
+
+# shellcheck source=config.example.sh
+source "$CONFIG"
+# shellcheck source=lib.sh
+source "${DIR}/lib.sh"
+
+[[ -x "$DISPLAYPLACER" ]] || die "displayplacer not found at $DISPLAYPLACER (brew install displayplacer)"
+[[ -n "${MAIN_DISPLAY_ID:-}" && -n "${SHARED_DISPLAY_ID:-}" ]] \
+  || die "MAIN_DISPLAY_ID / SHARED_DISPLAY_ID are not set in $CONFIG -- run Settings... or ./screen-switch discover"
+
+# --- monitor input (DDC/CI) ------------------------------------------------
+
+set_input() {
+  local code="$1"
+
+  for bad in "${BLOCKED_INPUTS[@]:-}"; do
+    if [[ -n "$bad" && "$code" == "$bad" ]]; then
+      echo "  refusing to select input $code -- it is in BLOCKED_INPUTS" >&2
+      return 1
+    fi
+  done
+
+  [[ -x "$M1DDC" ]] || { echo "  (m1ddc not installed, skipping input switch)"; return 1; }
+
+  "$M1DDC" display "$DDC_DISPLAY" set input "$code" >/dev/null 2>&1 || {
+    echo "  could not set monitor input to $code over DDC"
+    return 1
+  }
+
+  # Verify rather than trust the exit code: monitors return success for an input
+  # they then decline to select.
+  #
+  # Poll rather than reading once. A read taken immediately after a set can catch
+  # the panel mid-transition and return a transient value.
+  local now="" i
+  for i in 1 2 3 4 5 6; do
+    sleep 1
+    now=$(ddc_read_input)
+    ddc_failed "$now" && continue
+    [[ "$now" == "$code" ]] && { echo "  monitor input -> $code"; return 0; }
+  done
+
+  if ddc_failed "$now"; then
+    echo "  monitor input set to $code, but DDC went away -- use the monitor's buttons to return"
+    return 1
+  fi
+  echo "  monitor declined input $code (settled on $now) -- is anything plugged into it?"
+  return 1
+}
+
+# --- modes -----------------------------------------------------------------
+
+go_mirrored() {
+  echo "-> mirrored"
+
+  local spec applied=0
+  for spec in "${MIRROR_CANDIDATES[@]}"; do
+    if "$DISPLAYPLACER" "$spec" >/dev/null 2>&1 && [[ "$(current_mode)" == mirrored ]]; then
+      echo "  mirrored: ${spec#*res:}" | sed 's/ color_depth.*//'
+      applied=1
+      break
+    fi
+  done
+  [[ $applied -eq 1 ]] || die "no mirror mode in MIRROR_CANDIDATES could be applied"
+
+  # Mirror first, so the windows have somewhere to land before the monitor goes
+  # over to the other machine.
+  set_input "$OTHER_INPUT" || echo "  switch the monitor with its own buttons instead"
+}
+
+go_extended() {
+  echo "-> extended"
+
+  if [[ "${TRY_INPUT_SWITCH_BACK:-0}" == "1" ]]; then
+    set_input "$THIS_MAC_INPUT" >/dev/null 2>&1 \
+      && echo "  monitor input -> $THIS_MAC_INPUT" \
+      || echo "  monitor still on the other input; use its buttons"
+  fi
+
+  "$DISPLAYPLACER" "${EXTENDED_LAYOUT[@]}" >/dev/null 2>&1 \
+    || die "failed to restore the extended layout"
+  echo "  extended layout restored"
+}
+
+# --- discovery helper ------------------------------------------------------
+
+do_discover() {
+  echo "=== displayplacer list (modes omitted) ==="
+  "$DISPLAYPLACER" list | grep -vE '^  mode |^Resolutions for'
+  echo
+  echo "=== m1ddc displays ==="
+  "$M1DDC" display list 2>&1 || true
+  echo
+  echo "=== current monitor input ==="
+  "$M1DDC" display "$DDC_DISPLAY" get input 2>&1 || true
+  echo
+  echo "Settings... in the menu bar app turns all of this into a config for you."
+  echo "To do it by hand, copy the ids and the generated command above into"
+  echo "${CONFIG}."
+}
+
+# --- main ------------------------------------------------------------------
+
+cmd="$(normalize_mode "${1:-toggle}")"
+
+case "$cmd" in
+  status)
+    current_mode
+    ;;
+  input)
+    # `input` prints the monitor's current source; `input <code>` sets it.
+    if [[ -n "${2:-}" ]]; then
+      set_input "$2"
+    else
+      "$M1DDC" display "$DDC_DISPLAY" get input
+    fi
+    ;;
+  discover)
+    do_discover
+    ;;
+  mirrored|extended|toggle)
+    if ! shared_display_connected; then
+      echo "The shared monitor is not connected -- nothing to switch."
+      exit 0
+    fi
+    case "$cmd" in
+      mirrored) go_mirrored ;;
+      extended) go_extended ;;
+      toggle)
+        if [[ "$(current_mode)" == extended ]]; then go_mirrored; else go_extended; fi
+        ;;
+    esac
+    ;;
+  -h|--help|help)
+    sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    die "unknown command '${1}' (try: toggle, mirrored, extended, status, input, discover)"
+    ;;
+esac

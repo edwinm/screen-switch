@@ -1,0 +1,36 @@
+#!/bin/bash
+# build -- compile the menu bar app into its bundle and ad-hoc sign it.
+#
+# Re-sign after every rebuild: Login Items keys off the signature, and skipping
+# it reverts the System Settings entry to "Unknown Developer".
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP="${DIR}/Screen Switch.app"
+BIN="${APP}/Contents/MacOS/ScreenSwitch"
+RES="${APP}/Contents/Resources"
+
+SOURCES=(
+  "${DIR}/Config.swift"
+  "${DIR}/Displays.swift"
+  "${DIR}/ScreenSwitch.swift"
+  "${DIR}/SettingsWindow.swift"
+  "${DIR}/main.swift"
+)
+
+command -v swiftc >/dev/null || {
+  echo "swiftc not found -- install the Xcode command line tools: xcode-select --install" >&2
+  exit 1
+}
+
+mkdir -p "$(dirname "$BIN")" "$RES"
+# The status item looks its icons up by name in Resources, so they have to be
+# in place before the signature is taken over the bundle.
+cp "${DIR}/icons/AppIcon.icns" \
+   "${DIR}/icons/MenuExtended.pdf" \
+   "${DIR}/icons/MenuMirrored.pdf" \
+   "${DIR}/icons/MenuUnreachable.pdf" "$RES/"
+swiftc -O -swift-version 5 -o "$BIN" "${SOURCES[@]}"
+codesign --force --sign - "$APP"
+
+echo "built ${BIN}"

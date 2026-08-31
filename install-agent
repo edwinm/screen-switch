@@ -1,0 +1,98 @@
+#!/bin/bash
+# install-agent [start|stop|status|uninstall]
+#
+#   (no args)  build if needed, install as a login item, and start it
+#   start      start it again after using Quit in the menu
+#   stop       stop it (same as the menu's Quit); it returns at next login
+#   status     is it running?
+#   uninstall  stop it and remove it from login items
+set -uo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LABEL="org.bitstorm.screen-switch"
+TEMPLATE="${DIR}/${LABEL}.plist.template"
+PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+TARGET="gui/$(id -u)"
+APP="${DIR}/Screen Switch.app"
+BIN="${APP}/Contents/MacOS/ScreenSwitch"
+
+case "${1:-}" in
+  start)
+    # If the job is loaded, kickstart restarts it in place; otherwise load it.
+    # Going through launchd keeps `launchctl list` agreeing with reality --
+    # opening the .app directly would run it outside the job.
+    if launchctl print "${TARGET}/${LABEL}" >/dev/null 2>&1; then
+      launchctl kickstart "${TARGET}/${LABEL}" >/dev/null 2>&1
+    elif [[ -f "$PLIST" ]]; then
+      launchctl bootstrap "$TARGET" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
+    else
+      echo "not installed -- run install-agent with no arguments first" >&2; exit 1
+    fi
+    sleep 2
+    pgrep -f "MacOS/ScreenSwitch" >/dev/null \
+      && echo "Screen Switch is running." \
+      || { echo "failed to start -- see ~/Library/Logs/screen-switch.agent.log" >&2; exit 1; }
+    exit 0
+    ;;
+  stop)
+    # NOT `launchctl kill SIGTERM`: a signal is an unsuccessful exit, so
+    # KeepAlive restarts it immediately. Only a clean exit (the menu's Quit)
+    # or unloading the job actually stops it. bootout leaves the plist in
+    # place, so it returns at the next login.
+    launchctl bootout "${TARGET}/${LABEL}" 2>/dev/null
+    sleep 2
+    if pgrep -f "MacOS/ScreenSwitch" >/dev/null; then
+      echo "still running -- try Quit from the menu" >&2; exit 1
+    fi
+    echo "Screen Switch stopped. It starts again at login, or: install-agent start"
+    exit 0
+    ;;
+  status)
+    if pgrep -f "MacOS/ScreenSwitch" >/dev/null; then
+      echo "running (pid $(pgrep -f 'MacOS/ScreenSwitch' | head -1))"
+    elif [[ -f "$PLIST" ]]; then
+      echo "installed as a login item, but not running -- install-agent start"
+    else
+      echo "not installed"
+    fi
+    exit 0
+    ;;
+  uninstall)
+    launchctl bootout "${TARGET}/${LABEL}" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null
+    rm -f "$PLIST"
+    echo "Screen Switch removed from login items and stopped."
+    echo "Your settings are untouched in ${XDG_CONFIG_HOME:-${HOME}/.config}/screen-switch/."
+    exit 0
+    ;;
+esac
+
+# The agent runs via "Screen Switch.app" so that System Settings > General >
+# Login Items lists it as "Screen Switch". A bare script launched through
+# /bin/bash is listed as "bash" under "Unknown Developer" -- macOS reads the
+# display name from the enclosing bundle's Info.plist, and there isn't one.
+if [[ ! -x "$BIN" ]]; then
+  echo "no binary yet -- building..."
+  "${DIR}/build" || exit 1
+fi
+# Re-sign if the bundle changed; BTM keys off the signature.
+codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+
+# Render the launchd job for *this* machine. The template carries no paths of
+# its own, so the checkout can live anywhere and under any user.
+mkdir -p "${HOME}/Library/LaunchAgents"
+sed -e "s|__APP_PATH__|${BIN}|g" -e "s|__HOME__|${HOME}|g" "$TEMPLATE" > "$PLIST"
+
+# Replace any previous copy rather than stacking.
+launchctl bootout "${TARGET}/${LABEL}" 2>/dev/null || true
+launchctl bootstrap "$TARGET" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
+
+sleep 2
+if launchctl print "${TARGET}/${LABEL}" >/dev/null 2>&1; then
+  echo "Screen Switch running, and set to start at login."
+  echo "  settings:  menu bar icon > Settings..."
+  echo "  log:       ${HOME}/Library/Logs/screen-switch.log"
+  echo "  stop it:   ${DIR}/install-agent uninstall"
+else
+  echo "agent did not come up -- check ${HOME}/Library/Logs/screen-switch.agent.log" >&2
+  exit 1
+fi
