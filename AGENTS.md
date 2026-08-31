@@ -47,6 +47,18 @@ only; it shells out for every display change. Keep it that way — the shell too
 must stay independently usable, and duplicating the logic in Swift would give you
 two sources of truth that drift.
 
+That is a rule about **input switching too**, and it was broken once: the menu's
+device picker sent `m1ddc set input` straight from Swift, which quietly skipped
+`BLOCKED_INPUTS` (the guard that exists because one wrong code strands a panel),
+skipped the read-back that catches a monitor accepting an input it then declines,
+and got the ordering backwards on the way out. Swift may *read* DDC —
+`readInput()`, and the Settings sheet's current-input button — but anything that
+**changes** an input goes through `screen-switch input <code>`. Where the script
+needs to be aimed at a particular machine, pass `THIS_MAC_INPUT` / `OTHER_INPUT`
+in the environment: `config.sh` writes both as `${NAME:-value}`, so the
+environment wins, and the script keeps its own ordering. `Shell.run` takes an
+`env:` for exactly this.
+
 Dependencies are `displayplacer` and `m1ddc`, both from homebrew-core. `m1ddc`
 needs no tap despite what older docs say.
 
@@ -209,6 +221,27 @@ for a custom Homebrew prefix, and the launchd plist is a template that
 `install-agent` renders with the real app path and `$HOME`. `Paths.scriptDir`
 finds the shell tool via `$SCREEN_SWITCH_DIR`, then the bundle's parent directory
 (true when the .app sits in its checkout), then `Resources/`.
+
+## Small invariants that were bugs once
+
+- **`currentMode()` returns `Mode?`.** `Mode(config:)` defaults unknown input to
+  `.mirrored`, which is right for a config file and wrong for the output of
+  `screen-switch status`: a missing script or a broken tool path used to read as
+  a confident "mirrored" in the menu and in `poll()`'s comparison. Use
+  `Mode(exactly:)` for anything that has to be trusted, and show "unknown"
+  rather than guessing. The failure is logged once per distinct reason —
+  `rebuildMenu()` runs on every poll and every menu open, so logging each time
+  would drown the log.
+- **The shell tool's exit status is not optional to check.** `runScript()` logs
+  what failed; nothing that runs `screen-switch` should discard its result.
+- **`devices.conf` is `code|label|mode`, so labels cannot contain `|` or a
+  newline.** `Device.clean(label:)` is applied where a name is entered, not just
+  where it is written, because the silent version of this bug is nasty: "Home|
+  Work" reloaded as *Home* in **mirrored** mode (`work` being the legacy alias),
+  and a pasted newline dropped the machine entirely.
+- **`rebuildMenu()` must not force-unwrap the status item.** macOS silently
+  declines to draw a status item when the menu bar is full (see the notch note),
+  and the test harness has no status item at all.
 
 ## Design invariant: edge-triggered, never level-triggered
 

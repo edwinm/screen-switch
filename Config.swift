@@ -13,6 +13,17 @@ enum Mode: String, CaseIterable {
     case extended
     case mirrored
 
+    /// Exactly one of the two names, or nil. For output that has to be trusted
+    /// -- `screen-switch status` -- where init(config:)'s permissive default
+    /// would turn an error message into a confident "mirrored".
+    init?(exactly raw: String) {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "extended": self = .extended
+        case "mirrored": self = .mirrored
+        default: return nil
+        }
+    }
+
     /// 'mac' and 'work' were the original names and may still be in someone's
     /// devices.conf or Shortcut.
     init(config raw: String) {
@@ -36,6 +47,20 @@ struct Device: Equatable {
     var code: String
     var label: String
     var mode: Mode
+
+    /// devices.conf is one machine per line, fields split on '|', so a name
+    /// containing either character does not survive the round trip -- and it
+    /// fails silently in the worst way: "Home|Work" reloads as *Home* in
+    /// mirrored mode, because 'work' is the legacy alias for mirrored, and a
+    /// name with a newline in it loses the machine altogether. Names are
+    /// therefore cleaned where they are entered, not just where they are
+    /// written, so what the list shows is what the file holds.
+    static func clean(label: String) -> String {
+        label
+            .replacingOccurrences(of: "|", with: "/")
+            .components(separatedBy: .newlines).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
 }
 
 // MARK: - Locations
@@ -257,7 +282,7 @@ enum Devices {
         try FileManager.default.createDirectory(
             at: Paths.configDir, withIntermediateDirectories: true)
         let body = devices
-            .map { "\($0.code)|\($0.label)|\($0.mode.rawValue)" }
+            .map { "\($0.code)|\(Device.clean(label: $0.label))|\($0.mode.rawValue)" }
             .joined(separator: "\n")
         let text = """
         # Machines that share the monitor, one per line, in menu order:

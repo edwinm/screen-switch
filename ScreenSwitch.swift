@@ -39,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastReachable = true
     var pendingValue: String?
     var pendingCount = 0
+    /// The last reason the display mode could not be read, so it is logged on
+    /// the transition rather than on every poll.
+    private var statusFailure: String?
     let debounce = 2
     var busy = false
 
@@ -86,8 +89,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return ddcFailed(first) ? nil : first
     }
 
-    func currentMode() -> Mode {
-        Mode(config: Shell.run("/bin/bash", [Paths.screenSwitch, "status"]).out)
+    /// nil means "could not tell" -- the script did not run, or said something
+    /// that is not a mode. Mode(config:) must not be used here: its default is
+    /// .mirrored, so a missing shell tool used to read as a confident "mirrored"
+    /// in the menu and in poll()'s comparison.
+    func currentMode() -> Mode? {
+        let r = Shell.run("/bin/bash", [Paths.screenSwitch, "status"])
+        let out = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard r.ok, let mode = Mode(exactly: out) else {
+            noteStatusFailure(r.ok ? "status said '\(out)'" : shellProblem(r))
+            return nil
+        }
+        statusFailure = nil
+        return mode
+    }
+
+    /// The script's failures are worth exactly one log line each, not one per
+    /// poll: rebuildMenu() runs on every poll and every menu open.
+    private func noteStatusFailure(_ reason: String) {
+        guard statusFailure != reason else { return }
+        statusFailure = reason
+        log("cannot read the display mode: \(reason)")
+    }
+
+    /// What went wrong, in the order worth checking: a missing script beats
+    /// whatever bash printed about it.
+    private func shellProblem(_ r: (out: String, ok: Bool)) -> String {
+        if !FileManager.default.isExecutableFile(atPath: Paths.screenSwitch) {
+            return "screen-switch is not at \(Paths.screenSwitch)"
+        }
+        let first = r.out.components(separatedBy: .newlines)
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        return first.isEmpty ? "it exited non-zero without saying why" : first
+    }
+
+    /// Runs the shell tool and logs a failure rather than dropping it.
+    @discardableResult
+    private func runScript(_ args: [String], env: [String: String] = [:],
+                           what: String) -> Bool {
+        let r = Shell.run("/bin/bash", [Paths.screenSwitch] + args, env: env)
+        if !r.ok { log("  \(what) failed: \(shellProblem(r))") }
+        return r.ok
     }
 
     // MARK: - Following the monitor
@@ -127,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func apply(mode: Mode) {
         busy = true
         DispatchQueue.global(qos: .userInitiated).async {
-            Shell.run("/bin/bash", [Paths.screenSwitch, mode.rawValue])
+            self.runScript([mode.rawValue], what: mode.rawValue)
             DispatchQueue.main.async { self.busy = false; self.rebuildMenu() }
         }
     }
@@ -139,11 +181,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         log("menu: selected \(dev.label) (input \(dev.code))")
         busy = true
-        let cfg = config
+
+        // Everything goes through `screen-switch`, never straight to m1ddc.
+        // The old code sent `m1ddc set input` from here and then applied the
+        // mode, which skipped three things the script does:
+        //
+        //   - BLOCKED_INPUTS. The guard that exists because one wrong code can
+        //     drop a panel's link to the Mac was simply not on this path, which
+        //     is the one people actually use.
+        //   - verifying the switch by reading back. A monitor returns success
+        //     for an input it then declines, so the fixed 2-second sleep that
+        //     followed proved nothing.
+        //   - the order, which is different in each direction and is the whole
+        //     safety story. Setting the input first is right when taking the
+        //     monitor *back* and wrong when handing it over.
+        //
+        // Handing it over is one call: go_mirrored mirrors first -- so the
+        // windows have somewhere to land -- and only then switches the input,
+        // to OTHER_INPUT, which the environment points at this machine.
+        //
+        // Taking it back is two, because the input has to move before the
+        // extended layout is restored, and go_extended only does that when
+        // TRY_INPUT_SWITCH_BACK is on. Picking a machine by hand is an explicit
+        // request to move the monitor, so it happens either way; the env keeps
+        // the script's own attempt aimed at the same machine rather than at
+        // whatever THIS_MAC_INPUT says.
+        let mode = dev.mode.rawValue
         DispatchQueue.global(qos: .userInitiated).async {
-            Shell.run(cfg.m1ddc, ["display", cfg.ddcTarget, "set", "input", dev.code])
-            Thread.sleep(forTimeInterval: 2)
-            Shell.run("/bin/bash", [Paths.screenSwitch, dev.mode.rawValue])
+            if dev.mode == .extended {
+                self.runScript(["input", dev.code], what: "input \(dev.code)")
+            }
+            self.runScript([mode], env: dev.mode == .extended
+                                        ? ["THIS_MAC_INPUT": dev.code]
+                                        : ["OTHER_INPUT": dev.code],
+                           what: "\(mode) for \(dev.label)")
             DispatchQueue.main.async {
                 self.busy = false
                 self.lastInput = dev.code
@@ -229,7 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func rebuildMenu() {
-        let menu = statusItem.menu!
+        // Not `statusItem.menu!`: a status item macOS declined to draw, or one
+        // never made, is a reason to do nothing rather than to crash.
+        guard let menu = statusItem?.menu else { return }
         menu.removeAllItems()
 
         if !config.isConfigured {
@@ -244,8 +317,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let live = lastReachable ? (lastInput ?? "?") : nil
         let displayMode = currentMode()
-        setIcon(live == nil ? .unreachable
-                            : (displayMode == .mirrored ? .mirrored : .extended))
+        // An unknown mode gets the unreachable icon too: both mean the app
+        // cannot say what the displays are doing.
+        setIcon(live == nil || displayMode == nil ? .unreachable
+                : (displayMode == .mirrored ? .mirrored : .extended))
 
         let header = NSMenuItem(
             title: live == nil ? "Monitor unreachable" : "Showing: " + name(for: live!),
@@ -264,8 +339,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        let mode = NSMenuItem(title: "Displays: \(displayMode.displayName)",
-                              action: nil, keyEquivalent: "")
+        let mode = NSMenuItem(
+            title: "Displays: \(displayMode?.displayName ?? "unknown")",
+            action: nil, keyEquivalent: "")
         mode.isEnabled = false
         menu.addItem(mode)
         menu.addItem(.separator())

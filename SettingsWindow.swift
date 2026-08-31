@@ -118,7 +118,7 @@ final class SettingsWindowController: NSWindowController {
               !config.sharedDisplayID.isEmpty,
               snapshot.display(id: config.sharedDisplayID) != nil,
               let code = currentMonitorInput() else { return }
-        devices = [Device(code: code, label: Self.thisMacName, mode: .extended)]
+        devices = [Device(code: code, label: Device.clean(label: Self.thisMacName), mode: .extended)]
         config.thisMacInput = code
         reloadDevices()
         commitDevices()
@@ -913,7 +913,8 @@ final class SettingsWindowController: NSWindowController {
         if let existing = devices.firstIndex(where: { $0.code == code }) {
             devices[existing].mode = .extended
         } else {
-            devices.append(Device(code: code, label: Self.thisMacName, mode: .extended))
+            devices.append(Device(code: code, label: Device.clean(label: Self.thisMacName),
+                                  mode: .extended))
         }
         config.thisMacInput = code
         reloadDevices()
@@ -940,7 +941,8 @@ final class SettingsWindowController: NSWindowController {
             return
         }
         let mode = Mode(config: sheetMode?.selectedItem?.representedObject as? String ?? "mirrored")
-        devices.append(Device(code: code, label: name.isEmpty ? "Input \(code)" : name, mode: mode))
+        let label = Device.clean(label: name)
+        devices.append(Device(code: code, label: label.isEmpty ? "Input \(code)" : label, mode: mode))
         reloadDevices()
         commitDevices()
         // Both roles, not just THIS_MAC_INPUT: OTHER_INPUT is what
@@ -960,7 +962,16 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func deviceLabelEdited(_ sender: NSTextField) {
         guard devices.indices.contains(sender.tag) else { return }
-        devices[sender.tag].label = sender.stringValue
+        let cleaned = Device.clean(label: sender.stringValue)
+        // Show what was stored: silently keeping a name the file cannot hold is
+        // how the mode used to change behind the user's back.
+        if cleaned != sender.stringValue { sender.stringValue = cleaned }
+        guard !cleaned.isEmpty else {
+            NSSound.beep()
+            sender.stringValue = devices[sender.tag].label
+            return
+        }
+        devices[sender.tag].label = cleaned
         commitDevices()
     }
 

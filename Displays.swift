@@ -16,12 +16,20 @@ import AppKit
 // MARK: - Running things
 
 enum Shell {
+    /// `env` is merged over the inherited environment. config.sh writes the
+    /// input codes as `${NAME:-value}`, so a variable set here wins over the
+    /// file -- which is how the menu points `screen-switch` at one particular
+    /// machine without reimplementing what the script does with it.
     @discardableResult
-    static func run(_ launchPath: String, _ args: [String]) -> (out: String, ok: Bool) {
+    static func run(_ launchPath: String, _ args: [String],
+                    env: [String: String] = [:]) -> (out: String, ok: Bool) {
         guard FileManager.default.isExecutableFile(atPath: launchPath) else { return ("", false) }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: launchPath)
         p.arguments = args
+        if !env.isEmpty {
+            p.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
+        }
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
