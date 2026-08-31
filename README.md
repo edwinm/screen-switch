@@ -92,11 +92,14 @@ checkout, so pulling a new version never touches it.
 
 ### From the menu bar
 
+<p align="center">
+  <img src="pics/menu.png" alt="The Screen Switch menu, listing MacBook Pro and Work laptop" width="360">
+</p>
+
 Click the icon and you get a menu of your machines, with a checkmark on whichever
 one the monitor is currently showing, plus the current display mode. Pick a
 machine and the monitor switches to it and the Mac applies the matching layout.
-The menu also has **Settings…**, **Open Log**, **About Screen Switch**, and
-**Quit**.
+Below that: **About Screen Switch**, **Settings…**, **Open Log**, and **Quit**.
 
 The icon itself shows the state at a glance: extended, mirrored, or monitor
 unreachable.
