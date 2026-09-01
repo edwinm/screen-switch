@@ -109,6 +109,17 @@ equal("layout", read.extendedLayout, written.extendedLayout)
 equal("mirror candidates", read.mirrorCandidates, written.mirrorCandidates)
 equal("input codes", [read.thisMacInput, read.otherInput], ["16", "17"])
 equal("blocked inputs", read.blockedInputs, ["15"])
+// An automatic DDC display is written out as the shared monitor -- the shell tool
+// has no fallback of its own -- and has to read back as automatic, or Settings
+// would show an explicit choice nobody made.
+equal("automatic DDC display stays automatic", read.ddcDisplay, "")
+equal("automatic still aims at the shared monitor", read.ddcTarget, "BBBB-2222")
+
+var aimed = written
+aimed.ddcDisplay = "CCCC-3333"
+try! aimed.save()
+equal("an explicit DDC display survives", Config.load().ddcDisplay, "CCCC-3333")
+try! written.save()
 equal("flags survive being false", [read.followMonitor, read.tryInputSwitchBack], [false, false])
 equal("poll interval", read.pollInterval, 10)
 

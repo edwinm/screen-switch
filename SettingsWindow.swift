@@ -37,7 +37,7 @@ final class SettingsWindowController: NSWindowController {
     private let displayplacerField = NSTextField()
     private let m1ddcField = NSTextField()
     private let blockedField = NSTextField()
-    private let ddcField = NSTextField()
+    private let ddcPopup = NSPopUpButton()
     private let devicesTable = NSTableView()
     private let emptyLabel = NSTextField(
         labelWithString: "No machines yet — click + to add one.")
@@ -393,7 +393,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func advancedPane() -> NSView {
-        for field in [displayplacerField, m1ddcField, blockedField, ddcField] {
+        for field in [displayplacerField, m1ddcField, blockedField] {
             field.delegate = self
             field.isEditable = true
             field.isBordered = true
@@ -404,7 +404,10 @@ final class SettingsWindowController: NSWindowController {
         displayplacerField.placeholderString = "/opt/homebrew/bin/displayplacer"
         m1ddcField.placeholderString = "/opt/homebrew/bin/m1ddc"
         blockedField.placeholderString = "none"
-        ddcField.placeholderString = "the shared monitor"
+
+        ddcPopup.target = self
+        ddcPopup.action = #selector(ddcDisplayChanged)
+        fillDDCDisplays()
 
         let chooseDP = NSButton(title: "Choose…", target: self, action: #selector(chooseDisplayplacer))
         let chooseDDC = NSButton(title: "Choose…", target: self, action: #selector(chooseM1ddc))
@@ -423,8 +426,8 @@ final class SettingsWindowController: NSWindowController {
             [label("displayplacer:"), pathRow(displayplacerField, chooseDP)],
             [label("m1ddc:"), pathRow(m1ddcField, chooseDDC)],
             [label("DDC display:"),
-             stack(ddcField,
-                   help: "Which display m1ddc talks to — a screen id, or an index from “m1ddc display list”. Leave it empty to use the shared monitor, which is almost always what you want.")],
+             stack(ddcPopup,
+                   help: "Which display the monitor’s input is read from and set on. Automatic uses the shared monitor and is almost always right; pick another only if the wrong screen answers.")],
             [label("Never select inputs:"),
              stack(blockedField,
                    help: "Comma-separated input codes to refuse, whatever asks for them. Some monitors drop the link to the Mac when a particular input is chosen — the picture and the DDC channel go together, and only the monitor’s own buttons bring them back. If yours has one, list it here.")],
@@ -486,7 +489,7 @@ final class SettingsWindowController: NSWindowController {
         displayplacerField.stringValue = config.displayplacer
         m1ddcField.stringValue = config.m1ddc
         blockedField.stringValue = config.blockedInputs.joined(separator: ", ")
-        ddcField.stringValue = config.ddcDisplay
+        fillDDCDisplays()
         reloadDevices()
     }
 
@@ -523,6 +526,43 @@ final class SettingsWindowController: NSWindowController {
         if let item = popup.itemArray.first(where: { $0.representedObject as? String == id }) {
             popup.select(item)
         }
+    }
+
+    /// Only displays m1ddc actually reports can be driven over DDC, so those are
+    /// the choices -- the built-in is not one of them. Empty means "the shared
+    /// monitor", which is what almost everybody wants and what the first item
+    /// says, by name, so nobody has to recognise a screen id to know it is right.
+    private func fillDDCDisplays() {
+        ddcPopup.removeAllItems()
+
+        let shared = snapshot.display(id: config.sharedDisplayID)
+        ddcPopup.addItem(withTitle: "Automatic — \(shared?.name ?? "the shared monitor")")
+        ddcPopup.lastItem?.representedObject = ""
+
+        let capable = snapshot.displays.filter { $0.ddcIndex != nil }
+        if !capable.isEmpty { ddcPopup.menu?.addItem(.separator()) }
+        for d in capable {
+            ddcPopup.addItem(withTitle: d.menuLabel)
+            ddcPopup.lastItem?.representedObject = d.persistentID
+            ddcPopup.lastItem?.toolTip = d.persistentID
+        }
+
+        let wanted = config.ddcDisplay
+        guard !wanted.isEmpty else { return ddcPopup.selectItem(at: 0) }
+
+        // A hand-written config may name a display by its m1ddc index instead of
+        // its id. Show which display that is; the config keeps the index unless
+        // the user picks something here.
+        let id = capable.first { $0.ddcIndex.map(String.init) == wanted }?.persistentID ?? wanted
+        if let item = ddcPopup.itemArray.first(where: { $0.representedObject as? String == id }) {
+            return ddcPopup.select(item)
+        }
+        // A display that is not attached right now must still show, or opening
+        // Settings on the road would quietly re-aim DDC at something else.
+        ddcPopup.menu?.addItem(.separator())
+        ddcPopup.addItem(withTitle: "\(wanted) (not connected)")
+        ddcPopup.lastItem?.representedObject = wanted
+        ddcPopup.select(ddcPopup.itemArray.last)
     }
 
     private func fillMirrorResolutions() {
@@ -617,8 +657,9 @@ final class SettingsWindowController: NSWindowController {
         if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 
-    /// Both mirror candidates and the DDC index follow from the chosen displays,
-    /// so they are regenerated rather than asked for.
+    /// Both mirror candidates and the DDC display follow from the chosen
+    /// displays -- the first is regenerated rather than asked for, the second
+    /// defaults to the shared monitor and has to say which one that now is.
     private func regenerateDerivedValues() {
         let main = snapshot.display(id: config.mainDisplayID)
         let mode = (mirrorResPopup.selectedItem?.representedObject as? DisplayMode)
@@ -628,7 +669,7 @@ final class SettingsWindowController: NSWindowController {
                 main: config.mainDisplayID, shared: config.sharedDisplayID,
                 mode: mode, from: main)
         }
-        ddcField.stringValue = config.ddcDisplay
+        fillDDCDisplays()
     }
 
     // MARK: - Actions
@@ -692,6 +733,11 @@ final class SettingsWindowController: NSWindowController {
     @objc private func sharedDisplayChanged() {
         config.sharedDisplayID = sharedDisplayPopup.selectedItem?.representedObject as? String ?? ""
         regenerateDerivedValues()
+        commitConfig()
+    }
+
+    @objc private func ddcDisplayChanged() {
+        config.ddcDisplay = ddcPopup.selectedItem?.representedObject as? String ?? ""
         commitConfig()
     }
 
@@ -1077,9 +1123,6 @@ extension SettingsWindowController: NSTextFieldDelegate {
         switch field {
         case displayplacerField, m1ddcField:
             readToolPaths()
-        case ddcField:
-            config.ddcDisplay = field.stringValue.trimmingCharacters(in: .whitespaces)
-            commitConfig()
         case blockedField:
             config.blockedInputs = field.stringValue
                 .components(separatedBy: CharacterSet(charactersIn: ", "))

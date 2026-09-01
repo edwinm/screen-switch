@@ -102,7 +102,11 @@ This is why the Settings window can exist, and it is worth not re-deriving:
   line. The built-in prints `(null)` for its name.
 - `m1ddc display <uuid>` works as well as `m1ddc display <index>`. Prefer the
   UUID: indices move when a display is plugged or unplugged. `DDC_DISPLAY` holds
-  an id for exactly this reason.
+  an id for exactly this reason. In Settings it is a popup of the displays m1ddc
+  reports, headed by **Automatic**, which is the shared monitor: `config.sh`
+  always names a display outright because the shell tool has no such fallback, so
+  `Config.load()` reads `DDC_DISPLAY == SHARED_DISPLAY_ID` back as empty. Without
+  that, the popup could never show Automatic again after its first save.
 - `displayplacer list` gives per display the persistent id, a `Type:` line, the
   current mode, and every available mode; its last line is a ready-made command
   describing the current arrangement, which is what **Capture Current

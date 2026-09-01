@@ -164,6 +164,11 @@ struct Config {
         c.extendedLayout = v.array("EXTENDED_LAYOUT") ?? v.array("MAC_LAYOUT") ?? []
         c.mirrorCandidates = v.array("MIRROR_CANDIDATES") ?? []
         c.ddcDisplay = v.string("DDC_DISPLAY") ?? ""
+        // The file always names a display outright, because the shell tool has no
+        // notion of "whichever monitor is the shared one". In here, naming the
+        // shared monitor *is* the default, so it reads back as empty -- otherwise
+        // Settings could never show "Automatic" again after its first save.
+        if c.ddcDisplay == c.sharedDisplayID { c.ddcDisplay = "" }
         c.thisMacInput = v.string("THIS_MAC_INPUT") ?? v.string("MAC_INPUT") ?? ""
         c.otherInput = v.string("OTHER_INPUT") ?? v.string("WORK_INPUT") ?? ""
         c.blockedInputs = v.array("BLOCKED_INPUTS") ?? v.array("FORBIDDEN_INPUTS") ?? []
