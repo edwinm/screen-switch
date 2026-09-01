@@ -105,9 +105,9 @@ checkout, so pulling a new version never touches it.
 </p>
 
 Click the icon and you get a menu of your machines, with a checkmark on whichever
-one the monitor is currently showing, plus the current display mode. Pick a
-machine and the monitor switches to it and the Mac applies the matching layout.
-Below that: **About Screen Switch**, **Settings…**, **Open Log**, and **Quit**.
+one the monitor is currently showing. Pick a machine and the monitor switches to
+it and the Mac applies the matching layout. Below that: **About Screen Switch**,
+**Settings…**, and **Quit**.
 
 The icon itself shows the state at a glance: extended, mirrored, or monitor
 unreachable.
@@ -132,8 +132,8 @@ back.
 The registration remembers where the app is, so if you move the checkout, turn
 the setting off and on again.
 
-Activity goes to `~/Library/Logs/screen-switch.log`, which is what **Open Log**
-in the menu shows.
+Activity goes to `~/Library/Logs/screen-switch.log`, which is what **Settings… →
+Advanced → Open Log** shows.
 
 There is a second route that does the same job from a terminal, `install-agent`,
 described in [Command line](COMMAND-LINE.md#install-agent). Use one or the other.

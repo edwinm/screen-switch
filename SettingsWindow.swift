@@ -413,7 +413,15 @@ final class SettingsWindowController: NSWindowController {
         let chooseDDC = NSButton(title: "Choose…", target: self, action: #selector(chooseM1ddc))
         let reveal = NSButton(title: "Reveal Config in Finder",
                               target: self, action: #selector(revealConfig))
-        for b in [chooseDP, chooseDDC, reveal] { b.bezelStyle = .rounded }
+        let logButton = NSButton(title: "Open Log", target: self, action: #selector(openLog))
+        for b in [chooseDP, chooseDDC, reveal, logButton] { b.bezelStyle = .rounded }
+
+        // The log used to hang off the status menu, where it sat in front of
+        // everyone every day to be wanted about twice a year. It belongs next to
+        // the config file it explains.
+        let files = NSStackView(views: [reveal, logButton])
+        files.orientation = .horizontal
+        files.spacing = 8
 
         func pathRow(_ field: NSTextField, _ button: NSButton) -> NSStackView {
             let s = NSStackView(views: [field, button])
@@ -431,7 +439,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Never select inputs:"),
              stack(blockedField,
                    help: "Comma-separated input codes to refuse, whatever asks for them. Some monitors drop the link to the Mac when a particular input is chosen — the picture and the DDC channel go together, and only the monitor’s own buttons bring them back. If yours has one, list it here.")],
-            [NSGridCell.emptyContentView, reveal],
+            [NSGridCell.emptyContentView, files],
         ])
         style(grid)
         return grid
@@ -815,6 +823,18 @@ final class SettingsWindowController: NSWindowController {
             at: Paths.configDir, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: Paths.configFile.path) { commitConfig() }
         NSWorkspace.shared.activateFileViewerSelecting([Paths.configFile])
+    }
+
+    /// NSWorkspace.open on a file that is not there fails silently, and a button
+    /// that does nothing reads as a broken app rather than as an empty log.
+    @objc private func openLog() {
+        guard FileManager.default.fileExists(atPath: Paths.logFile.path) else {
+            present(error: "There is no log yet.",
+                    detail: "Screen Switch writes \(Paths.logFile.path) as it "
+                          + "switches; nothing has been written there so far.")
+            return
+        }
+        NSWorkspace.shared.open(Paths.logFile)
     }
 
     private func readToolPaths() {

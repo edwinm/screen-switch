@@ -86,7 +86,8 @@ With the agent installed, **Quit** in the menu stops it until your next login. T
 bring it back without logging out, use `install-agent start` (or just open
 `Screen Switch.app`).
 
-Activity goes to `~/Library/Logs/screen-switch.log` (the **Open Log** menu item).
+Activity goes to `~/Library/Logs/screen-switch.log` (**Settings… → Advanced →
+Open Log**).
 On this route, launchd's own stdout/stderr go to
 `~/Library/Logs/screen-switch.agent.log` as well; the checkbox's agent sends them
 to the unified log instead.

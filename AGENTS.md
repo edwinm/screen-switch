@@ -535,7 +535,7 @@ also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
 ```
 ~/.config/screen-switch/config.sh         settings (Settings… writes this)
 ~/.config/screen-switch/devices.conf      the machine list
-~/Library/Logs/screen-switch.log          app activity (the Open Log menu item),
+~/Library/Logs/screen-switch.log          app activity (Settings > Advanced),
                                           halved when it passes 256 KB;
                                           SCREEN_SWITCH_LOG redirects it
 ~/Library/Logs/screen-switch.agent.log    launchd stdout/stderr (install-agent only)

@@ -313,8 +313,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings?.showWindow(nil)
     }
 
-    @objc func openLog() { NSWorkspace.shared.open(Paths.logFile) }
-
     // Name, icon, version and copyright come off Info.plist; only the byline and
     // the repo link have to be supplied. The panel's text view honours .link, so
     // the URL is clickable rather than something to retype.
@@ -443,10 +441,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
-
-        let logItem = NSMenuItem(title: "Open Log", action: #selector(openLog), keyEquivalent: "")
-        logItem.target = self
-        menu.addItem(logItem)
 
         // Quit stands alone under a separator, the way every macOS menu ends.
         menu.addItem(.separator())
