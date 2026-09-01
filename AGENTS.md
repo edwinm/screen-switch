@@ -169,13 +169,27 @@ is already on.
 `set_input()` in `screen-switch` handles both. Do not "simplify" it back to a
 single read.
 
-### m1ddc's failure string contains neither "error" nor "unable"
+### A DDC read is good only if it is a number
 
-It is `Could not find a suitable external display.` A guard matching only
-`error`/`unable` treats a dead DDC link as a good read — that is exactly how an
-early probe marched past a failure and into input 15. `ddc_failed()` in `lib.sh`
-matches `could not` and `not find` too; `ddcFailed()` in `Displays.swift` mirrors
-it. Keep them in sync.
+m1ddc has more than one thing to say when it cannot reach a display, and neither
+one says "error" or "unable":
+
+- `Could not find a suitable external display.`
+- `The specified display does not exist. Use 'display list' to list displays and
+  use it's number (1, 2...) or its UUID to specify display!`
+
+A guard listing the phrases it knows treats every other one as a good read. That
+is how an early probe marched past a failure and into input 15, and later how the
+log recorded the second sentence as an input code — `input 16 -> The specified
+display does not exist...` — because the phrase list had been written against the
+first message only.
+
+So `ddc_failed()` in `lib.sh` and `ddcFailed()` in `Displays.swift` recognise the
+one *good* shape instead: a plain number, which is all a VCP value ever is.
+Prose of any wording fails. Do not turn either back into a phrase list, and do
+not add a range check — a monitor may answer with a code nothing configured
+expects (a switch transient once read `32`), and that is a reading, not a dead
+link. Keep the two in sync.
 
 ### Mirroring: the first screen id wins
 
@@ -290,8 +304,8 @@ tested.
 What is worth testing here is what the suite already covers: the bash-subset
 parser (including the `origin:(0,0)` trap), the config round trip and the
 migration from the old key names, the devices round trip with a `|` in a name,
-`displayplacer` and `m1ddc` output parsing, `ddcFailed` against m1ddc's real
-failure string, and the rule that the Mac's screen comes first in every mirror
+`displayplacer` and `m1ddc` output parsing, `ddcFailed` against both of m1ddc's real
+failure strings, and the rule that the Mac's screen comes first in every mirror
 candidate. No display tools are run, so it works on any machine.
 
 ## Design invariant: edge-triggered, never level-triggered

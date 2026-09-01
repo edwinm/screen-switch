@@ -215,12 +215,21 @@ equal("the built-in reports (null) for a name", ddc["AAAA-1111"]?.name, "(null)"
 // MARK: - DDC failure text
 
 section("ddcFailed")
-// m1ddc's failure contains neither "error" nor "unable"; a guard that misses it
-// treats a dead link as a good read, which is how an early probe marched into a
-// destructive input.
+// Anything but a number is a failure. m1ddc has more than one thing to say when
+// it cannot reach a display, and a guard that lists the phrases it knows treats
+// the rest as a good read -- which is how an early probe marched into a
+// destructive input, and how the log ended up recording a whole sentence as an
+// input code.
 check("m1ddc's real failure string", ddcFailed("Could not find a suitable external display."))
+check("the other failure string, which named no error",
+      ddcFailed("The specified display does not exist. Use 'display list' to list "
+              + "displays and use it's number (1, 2...) or its UUID to specify display!"))
 check("empty is a failure", ddcFailed(""))
 check("a plain reading is not", !ddcFailed("16"))
+check("nor is one with whitespace around it", !ddcFailed(" 16\n"))
+// A code nothing expects is still a reading -- the panel returned 32 mid-switch
+// once -- so this guard must not double as a range check.
+check("an unexpected code is still a reading", !ddcFailed("32"))
 
 // MARK: - Mirror candidates
 

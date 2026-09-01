@@ -1,19 +1,20 @@
 # Shared helpers for screen-switch, also used as reference by the Swift app.
 # Expects the config to have been sourced first.
 
-# A DDC read failed if it is empty or if m1ddc reported it could not reach the
-# display. Match on "could not" as well as error/unable -- m1ddc's failure text
-# is "Could not find a suitable external display.", which the narrower patterns
-# miss, and treating that as success is how you march past a dead link.
+# A DDC read succeeded only if it is a VCP value, which is to say a plain number.
+# Everything m1ddc prints when it cannot reach the display is prose, and matching
+# that prose is a game you lose: this used to list "could not", "error", "unable"
+# and "not find", and still sailed past "The specified display does not exist.",
+# treating the sentence as an input code. Recognising the one good shape cannot be
+# outrun by the next message.
+#
+# No range check: a monitor may answer with a code nothing configured expects --
+# transients during a switch do -- and that is a reading, not a dead link.
 #
 # ddcFailed() in Displays.swift mirrors this. Keep the two in sync.
 ddc_failed() {
-  local out="$1" rc
-  shopt -s nocasematch
-  [[ -z "$out" || "$out" == *"could not"* || "$out" == *error* || "$out" == *unable* || "$out" == *"not find"* ]]
-  rc=$?
-  shopt -u nocasematch
-  return $rc
+  local out="${1//[[:space:]]/}"
+  [[ ! "$out" =~ ^[0-9]+$ ]]
 }
 
 ddc_read_input() {
