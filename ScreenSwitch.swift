@@ -402,12 +402,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setIcon(live == nil || displayMode == nil ? .unreachable
                 : (displayMode == .mirrored ? .mirrored : .extended))
 
-        let header = NSMenuItem(
-            title: live == nil ? "Monitor unreachable" : "Showing: " + name(for: live!),
-            action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(.separator())
+        // No "Showing: ..." line: the checkmark in the list below already says
+        // which machine has the monitor, and a header repeating it just pushes
+        // the list down. Unreachable is the one case the list cannot say by
+        // itself -- nothing is ticked then, so the menu has to explain why.
+        if live == nil {
+            let header = NSMenuItem(title: "Monitor unreachable", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            menu.addItem(.separator())
+        }
 
         for d in devices {
             let item = NSMenuItem(title: d.label, action: #selector(pick(_:)), keyEquivalent: "")
@@ -418,13 +422,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
 
-        menu.addItem(.separator())
-        let mode = NSMenuItem(
-            title: "Displays: \(displayMode?.displayName ?? "unknown")",
-            action: nil, keyEquivalent: "")
-        mode.isEnabled = false
-        menu.addItem(mode)
-        menu.addItem(.separator())
+        // Nor a "Displays: extended" line: the icon carries the mode, which is
+        // what it is for. A separator only when there is a list above it to
+        // separate -- an empty machine list would otherwise open the menu on a
+        // stray rule.
+        if !devices.isEmpty { menu.addItem(.separator()) }
 
         addSettingsAndQuit(to: menu)
     }
