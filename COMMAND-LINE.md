@@ -29,11 +29,18 @@ Installing (Homebrew dependencies, `./build`) is in the
 If the shared monitor is not connected at all, every verb is a clean no-op.
 
 `input <code>` is the only supported way to change the monitor's input, and it
-is what the app's menu runs too: it refuses anything in **Settings → Advanced →
-Never select inputs**, and it verifies the switch by reading the input back
-rather than trusting the exit code. See
-[Some inputs can strand you](TECHNICAL.md#some-inputs-can-strand-you) for why that
-matters.
+is what the app's menu runs too: it verifies the switch by reading the input back
+rather than trusting the exit code, because a monitor will return success for an
+input it then declines. Send only codes you have read off your own monitor — see
+[Some inputs can strand you](TECHNICAL.md#some-inputs-can-strand-you) for why.
+
+Asking for the input the monitor is already showing is a no-op that reports
+success without writing anything over DDC.
+
+`mirrored` and `input <code>` exit non-zero when the monitor did not move, so a
+machine you cannot switch to says so instead of looking like it worked. Exit `2`
+is the one in-between case: the monitor took the input and this Mac's link went
+with it, which on some panels is simply what handing the monitor over looks like.
 
 ### Where it reads its configuration
 

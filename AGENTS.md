@@ -56,10 +56,9 @@ must stay independently usable, and duplicating the logic in Swift would give yo
 two sources of truth that drift.
 
 That is a rule about **input switching too**, and it was broken once: the menu's
-device picker sent `m1ddc set input` straight from Swift, which quietly skipped
-`BLOCKED_INPUTS` (the guard that exists because one wrong code strands a panel),
-skipped the read-back that catches a monitor accepting an input it then declines,
-and got the ordering backwards on the way out. Swift may *read* DDC, in
+device picker sent `m1ddc set input` straight from Swift, which skipped the
+read-back that catches a monitor accepting an input it then declines, and got
+the ordering backwards on the way out. Swift may *read* DDC, in
 `readInput()` and the Settings sheet's current-input button, but anything that
 **changes** an input goes through `screen-switch input <code>`. Where the script
 needs to be aimed at a particular machine, pass `THIS_MAC_INPUT` / `OTHER_INPUT`
@@ -84,8 +83,10 @@ scalars, `${NAME:-default}`, and multi-line arrays. Two traps if you touch it:
 - Array elements contain `origin:(0,0)`, so "find the closing paren" has to mean
   the first *unquoted* one.
 - The generator rewrites the file whole. It reads the old key names
-  (`EXTERNAL_ID`, `MAC_LAYOUT`, `FORBIDDEN_INPUTS`, …) so an old config migrates
-  on first save, but it does not preserve user comments. That is documented in
+  (`EXTERNAL_ID`, `MAC_LAYOUT`, `MAC_INPUT`, …) so an old config migrates on
+  first save, but it does not preserve user comments. A key that has been
+  dropped outright, `BLOCKED_INPUTS`, is simply not read; the stale line goes
+  on the next save. That is documented in
   the file's own header; do not quietly change it to a patching writer without
   saying so.
 
@@ -148,9 +149,25 @@ goes with it, so nothing on the Mac can undo it; it takes a physical press of
 the monitor's buttons. DP and mDP evidently share a link there. HDMI 1 does
 **not** do this.
 
-The old code hardcoded `FORBIDDEN_INPUTS=(15)`. That is wrong for a published
-tool: 15 is a perfectly ordinary DisplayPort input on other panels. It is now
-`BLOCKED_INPUTS`, empty by default and editable in Settings → Advanced.
+The old code hardcoded `FORBIDDEN_INPUTS=(15)`, which is wrong for a published
+tool: 15 is a perfectly ordinary DisplayPort input on other panels. It became
+`BLOCKED_INPUTS`, a user-editable list in Settings → Advanced, and that has now
+been **removed too**. Do not bring it back. The reasoning, which is worth not
+re-deriving:
+
+- It could only be filled by someone who already knew which code was
+  destructive -- and someone who knows that does not add the code as a machine.
+  It protected people who already had the answer.
+- Nothing cross-checked it against `devices.conf`, so it could forbid a machine
+  sitting in the menu. That is not hypothetical: it shipped holding the
+  migrated `15`, which on the author's own desk was the PC's DisplayPort input.
+  Picking PC mirrored the Mac, refused the input, and said nothing.
+- The 15 finding above was measured with **nothing plugged into DP**. With a
+  machine on that input, selecting it is a handover, and losing the Mac's
+  picture is the point rather than the fault.
+
+The guard that actually holds is the one below: no probing, and no code the user
+did not read off their own monitor.
 
 What replaces the hardcoded guard is **not probing at all**: the Add Device sheet
 reads the monitor's *current* input, so a user switches the monitor by hand and
@@ -275,7 +292,27 @@ finds the shell tool via `$SCREEN_SWITCH_DIR`, then the bundle's parent director
   `rebuildMenu()` runs on every poll and every menu open, so logging each time
   would drown the log.
 - **The shell tool's exit status is not optional to check.** `runScript()` logs
-  what failed; nothing that runs `screen-switch` should discard its result.
+  what failed; nothing that runs `screen-switch` should discard its result. It
+  logs *every* line the script printed, because a failed `mirrored` opens with
+  `-> mirrored` and the mode it applied, and only names the reason further down:
+  a first-line summary reported the half that worked.
+- **A mode verb's exit status has to carry the input switch.** `go_mirrored`
+  swallowed `set_input`'s failure into an `||` echo and exited 0, so picking a
+  machine the monitor would not switch to mirrored the Mac, left the monitor
+  where it was, and logged nothing at all. The one status that is not a failure
+  there is `set_input`'s **2**: the monitor took the input and the Mac's link
+  left with it, which is what a handover looks like on a panel that drops mDP
+  for DP. Taking the monitor *back* still counts 2 as a failure.
+- **`pick()` records the input only when the switch worked.** Setting
+  `lastInput` to the code the monitor was *asked* for ticked a machine in the
+  menu that the monitor had never switched to, and then fed the edge detector a
+  change that never happened -- the next poll read the old input back and took
+  it for someone moving the monitor by hand.
+- **Following the monitor must never move the monitor.** `apply(mode:for:)`
+  passes the input the monitor is showing *now*, because `go_mirrored` ends in
+  `set_input "$OTHER_INPUT"` and with an empty environment that is whatever the
+  config says. With three machines in the list, following the monitor to the
+  third one answered by shoving it onto the second one's input.
 - **`devices.conf` is `code|label|mode`, so labels cannot contain `|` or a
   newline.** `Device.clean(label:)` is applied where a name is entered, not just
   where it is written, because the silent version of this bug is nasty: "Home|

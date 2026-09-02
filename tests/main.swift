@@ -118,7 +118,7 @@ EXTENDED_LAYOUT=(
   "id:AAAA res:1728x1117 hz:120 color_depth:8 enabled:true scaling:on origin:(0,0) degree:0"
   "id:BBBB res:3840x2160 hz:60 color_depth:8 enabled:true scaling:off origin:(1728,0) degree:0"
 )
-BLOCKED_INPUTS=()
+NOTHING_HERE=()
 TRAILING=value # with a comment
 """
 let cfg = BashConfig(sample)
@@ -133,7 +133,7 @@ equal("array length", cfg.array("EXTENDED_LAYOUT")?.count, 2)
 check("origin:(0,0) survives the array parser",
       cfg.array("EXTENDED_LAYOUT")?.first?.hasSuffix("origin:(0,0) degree:0") == true,
       "got \(cfg.array("EXTENDED_LAYOUT")?.first ?? "nil")")
-equal("empty array", cfg.array("BLOCKED_INPUTS")?.count, 0)
+equal("empty array", cfg.array("NOTHING_HERE")?.count, 0)
 
 // MARK: - Config round trip
 
@@ -147,7 +147,6 @@ written.extendedLayout = ["id:AAAA res:1728x1117 hz:120 color_depth:8 enabled:tr
 written.mirrorCandidates = ["id:AAAA+BBBB res:1728x1117 hz:120 color_depth:8 enabled:true scaling:on origin:(0,0) degree:0"]
 written.thisMacInput = "16"
 written.otherInput = "17"
-written.blockedInputs = ["15"]
 written.followMonitor = false
 written.tryInputSwitchBack = false
 written.pollInterval = 10
@@ -157,7 +156,6 @@ equal("display ids", [read.mainDisplayID, read.sharedDisplayID], ["AAAA-1111", "
 equal("layout", read.extendedLayout, written.extendedLayout)
 equal("mirror candidates", read.mirrorCandidates, written.mirrorCandidates)
 equal("input codes", [read.thisMacInput, read.otherInput], ["16", "17"])
-equal("blocked inputs", read.blockedInputs, ["15"])
 // An automatic DDC display is written out as the shared monitor -- the shell tool
 // has no fallback of its own -- and has to read back as automatic, or Settings
 // would show an explicit choice nobody made.
@@ -178,9 +176,6 @@ BUILTIN_ID="AAAA-1111"
 EXTERNAL_ID="BBBB-2222"
 MAC_INPUT="16"
 WORK_INPUT="17"
-FORBIDDEN_INPUTS=(
-  "15"
-)
 MAC_LAYOUT=(
   "id:${BUILTIN_ID} res:1728x1117 hz:120 color_depth:8 enabled:true scaling:on origin:(0,0) degree:0"
 )
@@ -190,7 +185,6 @@ let migrated = Config.load()
 equal("BUILTIN_ID -> mainDisplayID", migrated.mainDisplayID, "AAAA-1111")
 equal("EXTERNAL_ID -> sharedDisplayID", migrated.sharedDisplayID, "BBBB-2222")
 equal("MAC_INPUT -> thisMacInput", migrated.thisMacInput, "16")
-equal("FORBIDDEN_INPUTS -> blockedInputs", migrated.blockedInputs, ["15"])
 check("${BUILTIN_ID} in a layout is expanded",
       migrated.extendedLayout.first?.hasPrefix("id:AAAA-1111 ") == true,
       "got \(migrated.extendedLayout.first ?? "nil")")

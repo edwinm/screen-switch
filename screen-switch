@@ -63,14 +63,17 @@ set_input() {
     return 1
   fi
 
-  for bad in "${BLOCKED_INPUTS[@]:-}"; do
-    if [[ -n "$bad" && "$code" == "$bad" ]]; then
-      echo "  refusing to select input $code -- it is in BLOCKED_INPUTS" >&2
-      return 1
-    fi
-  done
-
   [[ -x "$M1DDC" ]] || { echo "  (m1ddc not installed, skipping input switch)"; return 1; }
+
+  # Already there is not a switch. Worth a read before a write because both
+  # the menu's device picker and the follow-the-monitor path ask for the input
+  # the monitor is showing already -- the second one every time it reconciles.
+  local at
+  at=$(ddc_read_input)
+  if ! ddc_failed "$at" && [[ "$at" == "$code" ]]; then
+    echo "  monitor input is already $code"
+    return 0
+  fi
 
   "$M1DDC" display "$DDC_DISPLAY" set input "$code" >/dev/null 2>&1 || {
     echo "  could not set monitor input to $code over DDC"
@@ -90,9 +93,15 @@ set_input() {
     [[ "$now" == "$code" ]] && { echo "  monitor input -> $code"; return 0; }
   done
 
+  # Status 2, not 1: the monitor accepted the input and this Mac's link went
+  # with it. On some panels that is exactly what handing the monitor over looks
+  # like -- the display and the DDC channel leave together -- so the caller
+  # handing it over counts this as done, while the caller asking for it back
+  # counts it as a failure. Reported as a plain failure it made the menu say the
+  # monitor had not switched when it had.
   if ddc_failed "$now"; then
     echo "  monitor input set to $code, but DDC went away -- use the monitor's buttons to return"
-    return 1
+    return 2
   fi
   echo "  monitor declined input $code (settled on $now) -- is anything plugged into it?"
   return 1
@@ -115,7 +124,19 @@ go_mirrored() {
 
   # Mirror first, so the windows have somewhere to land before the monitor goes
   # over to the other machine.
-  set_input "$OTHER_INPUT" || echo "  switch the monitor with its own buttons instead"
+  #
+  # The exit status is the input's, not the mirroring's: mirrored-but-still-on-
+  # this-input is a failure to report, not a success. It used to be swallowed by
+  # the `||`, so the app saw exit 0 and logged nothing, and a machine the monitor
+  # would not switch to mirrored the Mac and then looked like it had worked.
+  set_input "$OTHER_INPUT"
+  case $? in
+    0|2) ;;
+    *)
+      echo "  switch the monitor with its own buttons instead"
+      return 1
+      ;;
+  esac
 }
 
 go_extended() {

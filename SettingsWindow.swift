@@ -36,7 +36,6 @@ final class SettingsWindowController: NSWindowController {
     private let intervalPopup = NSPopUpButton()
     private let displayplacerField = NSTextField()
     private let m1ddcField = NSTextField()
-    private let blockedField = NSTextField()
     private let ddcPopup = NSPopUpButton()
     private let devicesTable = NSTableView()
     private let emptyLabel = NSTextField(
@@ -393,7 +392,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func advancedPane() -> NSView {
-        for field in [displayplacerField, m1ddcField, blockedField] {
+        for field in [displayplacerField, m1ddcField] {
             field.delegate = self
             field.isEditable = true
             field.isBordered = true
@@ -403,7 +402,6 @@ final class SettingsWindowController: NSWindowController {
         }
         displayplacerField.placeholderString = "/opt/homebrew/bin/displayplacer"
         m1ddcField.placeholderString = "/opt/homebrew/bin/m1ddc"
-        blockedField.placeholderString = "none"
 
         ddcPopup.target = self
         ddcPopup.action = #selector(ddcDisplayChanged)
@@ -436,9 +434,6 @@ final class SettingsWindowController: NSWindowController {
             [label("DDC display:"),
              stack(ddcPopup,
                    help: "Which display the monitor’s input is read from and set on. Automatic uses the shared monitor and is almost always right; pick another only if the wrong screen answers.")],
-            [label("Never select inputs:"),
-             stack(blockedField,
-                   help: "Comma-separated input codes to refuse, whatever asks for them. Some monitors drop the link to the Mac when a particular input is chosen — the picture and the DDC channel go together, and only the monitor’s own buttons bring them back. If yours has one, list it here.")],
             [NSGridCell.emptyContentView, files],
         ])
         style(grid)
@@ -496,7 +491,6 @@ final class SettingsWindowController: NSWindowController {
         layoutSummary.stringValue = layoutDescription()
         displayplacerField.stringValue = config.displayplacer
         m1ddcField.stringValue = config.m1ddc
-        blockedField.stringValue = config.blockedInputs.joined(separator: ", ")
         fillDDCDisplays()
         reloadDevices()
     }
@@ -1202,13 +1196,6 @@ extension SettingsWindowController: NSComboBoxDelegate {
         switch field {
         case displayplacerField, m1ddcField:
             readToolPaths()
-        case blockedField:
-            config.blockedInputs = field.stringValue
-                .components(separatedBy: CharacterSet(charactersIn: ", "))
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty && Int($0) != nil }
-            field.stringValue = config.blockedInputs.joined(separator: ", ")
-            commitConfig()
         default:
             break
         }

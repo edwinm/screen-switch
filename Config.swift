@@ -218,7 +218,6 @@ struct Config {
     var ddcDisplay = ""
     var thisMacInput = ""
     var otherInput = ""
-    var blockedInputs: [String] = []
     var tryInputSwitchBack = true
     var followMonitor = true
     var pollInterval = 5.0
@@ -263,7 +262,6 @@ struct Config {
         if c.ddcDisplay == c.sharedDisplayID { c.ddcDisplay = "" }
         c.thisMacInput = v.string("THIS_MAC_INPUT") ?? v.string("MAC_INPUT") ?? ""
         c.otherInput = v.string("OTHER_INPUT") ?? v.string("WORK_INPUT") ?? ""
-        c.blockedInputs = v.array("BLOCKED_INPUTS") ?? v.array("FORBIDDEN_INPUTS") ?? []
         c.tryInputSwitchBack = v.bool("TRY_INPUT_SWITCH_BACK") ?? true
         c.followMonitor = v.bool("FOLLOW_MONITOR") ?? true
         c.pollInterval = v.double("POLL_INTERVAL") ?? 5.0
@@ -348,13 +346,10 @@ struct Config {
         THIS_MAC_INPUT="${THIS_MAC_INPUT:-\(thisMacInput)}"
         OTHER_INPUT="${OTHER_INPUT:-\(otherInput)}"
 
-        # --- Safety ----------------------------------------------------------
-        # Inputs that must never be selected. Some panels drop the link to the Mac
-        # when a particular input is chosen -- the display and the DDC channel go
-        # together, and only the monitor's own buttons bring them back.
-        \(arr("BLOCKED_INPUTS", blockedInputs))
-
         # Coming back to extended mode, also pull the input back over DDC.
+        # Whether it works is monitor-specific: some panels keep answering DDC
+        # while showing another machine, some take the link away with the
+        # picture. Set to 0 to always switch back with the monitor's buttons.
         TRY_INPUT_SWITCH_BACK=\(tryInputSwitchBack ? 1 : 0)
 
         # --- Menu bar app ----------------------------------------------------

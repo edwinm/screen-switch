@@ -71,10 +71,17 @@ Measured example: on a **DELL U2718Q**, input 15 (DisplayPort 1) does exactly
 this. DisplayPort and mDP evidently share a link on that panel. HDMI 1 does not;
 the mDP link stays up and DDC keeps answering.
 
-If you find such an input on your monitor, put it in **Settings → Advanced →
-Never select inputs**. The list is empty by default, because which codes are safe
-is a property of your hardware and blocking a number that is a perfectly good
-DisplayPort input elsewhere would be worse than useless.
+Screen Switch never goes looking for this. It only ever selects a code that is
+already in your machine list, and codes get there by being read off the monitor —
+switch by hand, then **Use Monitor's Current Input**. Nothing sweeps the range to
+see what sticks.
+
+That leaves one way to find such an input: type a code you have not read off the
+monitor. Don't. Note too that losing the Mac's picture is not by itself the
+failure — handing the monitor to another machine is *supposed* to take the
+display away. The bad case is selecting an input with nothing plugged into it,
+which leaves you with neither a picture nor a DDC channel to undo it. If that
+happens, the monitor's own buttons are the way back.
 
 ## What DDC cannot tell you
 

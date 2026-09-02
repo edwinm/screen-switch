@@ -162,24 +162,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let reason { log("cannot read the display mode: \(reason)") }
     }
 
-    /// What went wrong, in the order worth checking: a missing script beats
-    /// whatever bash printed about it.
-    private static func shellProblem(_ r: (out: String, ok: Bool)) -> String {
+    /// The script's own account of a failure, a line at a time. A missing script
+    /// beats whatever bash printed about it.
+    private static func explanation(_ r: (out: String, ok: Bool)) -> [String] {
         if !FileManager.default.isExecutableFile(atPath: Paths.screenSwitch) {
-            return "screen-switch is not at \(Paths.screenSwitch)"
+            return ["screen-switch is not at \(Paths.screenSwitch)"]
         }
-        let first = r.out.components(separatedBy: .newlines)
-            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
-        return first.isEmpty ? "it exited non-zero without saying why" : first
+        let lines = r.out.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return lines.isEmpty ? ["it exited non-zero without saying why"] : lines
+    }
+
+    /// What went wrong, in the order worth checking.
+    private static func shellProblem(_ r: (out: String, ok: Bool)) -> String {
+        explanation(r).first ?? "it exited non-zero without saying why"
     }
 
     /// Runs the shell tool and logs a failure rather than dropping it.
+    ///
+    /// Every line the script printed goes in, not just the first. A failed
+    /// `mirrored` opens with "-> mirrored" -- the half that worked -- and only
+    /// names the reason several lines down, so a first-line summary logged the
+    /// success and threw the failure away.
     @discardableResult
     private func runScript(_ args: [String], env: [String: String] = [:],
-                           what: String) -> Bool {
+                           what: String) -> (ok: Bool, why: [String]) {
         let r = Shell.run("/bin/bash", [Paths.screenSwitch] + args, env: env)
-        if !r.ok { log("  \(what) failed: \(Self.shellProblem(r))") }
-        return r.ok
+        guard r.ok else {
+            let why = Self.explanation(r)
+            log("  \(what) failed")
+            for line in why { log("    \(line)") }
+            return (false, why)
+        }
+        return (true, [])
     }
 
     // MARK: - Following the monitor
@@ -239,14 +255,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let dev = devices.first(where: { $0.code == v }), dev.mode != lastMode {
             log("  applying '\(dev.mode.rawValue)' mode")
-            apply(mode: dev.mode)
+            apply(mode: dev.mode, for: dev.code)
         }
     }
 
-    func apply(mode: Mode) {
+    /// Brings the display side into line with a monitor that has already moved.
+    ///
+    /// `input` is the code the monitor is on right now, and it is passed down
+    /// for a reason: `go_mirrored` ends in `set_input "$OTHER_INPUT"`, and with
+    /// nothing in the environment that is whatever the config says -- so
+    /// following the monitor to a third machine used to answer by shoving the
+    /// monitor onto the *second* one's input. Naming the input it is already
+    /// showing makes the script's own switch the no-op it should be here.
+    func apply(mode: Mode, for input: String) {
         busy = true
         DispatchQueue.global(qos: .userInitiated).async {
-            self.runScript([mode.rawValue], what: mode.rawValue)
+            self.runScript([mode.rawValue],
+                           env: mode == .extended ? ["THIS_MAC_INPUT": input]
+                                                  : ["OTHER_INPUT": input],
+                           what: mode.rawValue)
             DispatchQueue.main.async {
                 self.busy = false
                 self.refreshMode()
@@ -266,9 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The old code sent `m1ddc set input` from here and then applied the
         // mode, which skipped three things the script does:
         //
-        //   - BLOCKED_INPUTS. The guard that exists because one wrong code can
-        //     drop a panel's link to the Mac was simply not on this path, which
-        //     is the one people actually use.
         //   - verifying the switch by reading back. A monitor returns success
         //     for an input it then declines, so the fixed 2-second sleep that
         //     followed proved nothing.
@@ -288,19 +312,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // whatever THIS_MAC_INPUT says.
         let mode = dev.mode.rawValue
         DispatchQueue.global(qos: .userInitiated).async {
+            var why: [String] = []
             if dev.mode == .extended {
-                self.runScript(["input", dev.code], what: "input \(dev.code)")
+                why = self.runScript(["input", dev.code], what: "input \(dev.code)").why
             }
-            self.runScript([mode], env: dev.mode == .extended
-                                        ? ["THIS_MAC_INPUT": dev.code]
-                                        : ["OTHER_INPUT": dev.code],
-                           what: "\(mode) for \(dev.label)")
+            let r = self.runScript([mode], env: dev.mode == .extended
+                                                ? ["THIS_MAC_INPUT": dev.code]
+                                                : ["OTHER_INPUT": dev.code],
+                                   what: "\(mode) for \(dev.label)")
+            if !r.ok { why = r.why }
+
             DispatchQueue.main.async {
                 self.busy = false
-                self.lastInput = dev.code
+                // Only on success. Recording the code the monitor was *asked*
+                // for made the menu tick a machine it had not switched to, and
+                // then handed the edge detector a change that never happened:
+                // the next poll read the old input back and took it for the
+                // user moving the monitor by hand.
+                if why.isEmpty { self.lastInput = dev.code }
+                else { self.report(failedToSelect: dev, why: why) }
                 self.refreshMode()
             }
         }
+    }
+
+    /// A pick that did not move the monitor has to say so. The automatic paths
+    /// stay quiet -- a watcher that opens dialogs is unusable -- but this one is
+    /// a button the user just pressed, and a silent one sends the user to the
+    /// log to work out why the menu did nothing.
+    ///
+    /// The last two lines, not the whole transcript: the script opens with what
+    /// it is doing and what worked ("-> mirrored", the mode it applied), and
+    /// ends with the reason it stopped and what to do about it. The log keeps
+    /// every line; a dialog that reads as terminal output does not.
+    private func report(failedToSelect dev: Device, why: [String]) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The monitor did not switch to \u{201C}\(dev.label)\u{201D}."
+        alert.informativeText = why.suffix(2).joined(separator: "\n")
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     // MARK: - Menu actions

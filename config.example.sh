@@ -70,17 +70,6 @@ DDC_DISPLAY="<SHARED_DISPLAY_ID>"
 THIS_MAC_INPUT="${THIS_MAC_INPUT:-16}"
 OTHER_INPUT="${OTHER_INPUT:-17}"
 
-# --- Safety ----------------------------------------------------------------
-# Input codes that must never be selected, whatever asks for them.
-#
-# Empty by default, because which codes are safe is a property of your monitor.
-# Some panels drop the link to the Mac when a particular input is selected: the
-# display vanishes from macOS *and* the DDC channel goes with it, so nothing on
-# the Mac can undo it and you need the monitor's own buttons to get back. On a
-# DELL U2718Q, input 15 does exactly that -- DisplayPort 1 and mDP evidently
-# share a link. If you find such an input on yours, list it here.
-BLOCKED_INPUTS=()
-
 # Coming back to extended mode, also pull the monitor's input back over DDC.
 # Whether that works is monitor-specific: some keep answering DDC while showing
 # another machine, some do not. Set to 0 to always switch back by hand.
