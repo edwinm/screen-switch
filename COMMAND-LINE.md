@@ -4,7 +4,7 @@ The menu bar app is the UI in front of a shell tool, not a reimplementation of
 it: every display change the app makes is `screen-switch` doing the work. So the
 tool is usable on its own, and this is what it does.
 
-Installing — Homebrew dependencies, `./build` — is in the
+Installing (Homebrew dependencies, `./build`) is in the
 [README](README.md#install), and the reasoning behind all of this is in
 [Technical details](TECHNICAL.md). The app's own settings live in
 **Settings…**; `screen-switch` reads the same configuration file.
@@ -39,7 +39,7 @@ matters.
 
 In order: `$SCREEN_SWITCH_CONFIG`, then
 `${XDG_CONFIG_HOME:-~/.config}/screen-switch/config.sh`, then a `config.sh` next
-to the script itself — the last one is gitignored and handy for testing.
+to the script itself; the last one is gitignored and handy for testing.
 
 The input codes are written as `${NAME:-value}`, so one run can be pointed at a
 different machine without touching the file:
@@ -79,8 +79,8 @@ the same job from outside the app, as a launchd job of its own:
 ./install-agent uninstall  # stop it and remove it from login items
 ```
 
-Use one or the other. Installing both is harmless — the second copy to start
-notices the first and exits — but Login Items then lists two entries.
+Use one or the other. Installing both is harmless, since the second copy to
+start notices the first and exits, but Login Items then lists two entries.
 
 With the agent installed, **Quit** in the menu stops it until your next login. To
 bring it back without logging out, use `install-agent start` (or just open
@@ -96,7 +96,7 @@ to the unified log instead.
 
 `KeepAlive` is set to `SuccessfulExit: false`, so a signal counts as an
 unsuccessful exit and launchd restarts it within seconds. That setting is what
-makes the menu's **Quit** work — a clean exit stays quit — so `install-agent
+makes the menu's **Quit** work, since a clean exit stays quit, so `install-agent
 stop` unloads the job with `bootout` instead. The plist stays in place, so it
 returns at the next login either way.
 
@@ -109,6 +109,6 @@ Switch.app* with its icon. That is the ad-hoc signature: the plist's
 share a Developer ID team, and an ad-hoc signature has no team, so macOS
 describes the program launchd runs instead.
 
-The checkbox in Settings has no such problem — the agent it registers is inside
+The checkbox in Settings has no such problem: the agent it registers is inside
 the app bundle, so the row is the app. If the tidy entry matters to you, use the
 checkbox and `./install-agent uninstall` the launchd job.

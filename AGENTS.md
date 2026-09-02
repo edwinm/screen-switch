@@ -1,12 +1,12 @@
 # AGENTS.md
 
 Orientation for a new session picking up this project. Read this before touching
-anything — several of the facts below cost a broken display to learn, and one of
+anything. Several of the facts below cost a broken display to learn, and one of
 them will strand a user's Mac if you rediscover it the hard way.
 
 User-facing docs are split three ways: `README.md` is the app, `COMMAND-LINE.md`
 the shell tools, `TECHNICAL.md` how it works and what the hardware will not do.
-Keep them that way — the README is for someone installing a menu bar app, and it
+Keep them that way: the README is for someone installing a menu bar app, and it
 had drifted into being all three. This file is the working context, and is not
 one of them.
 
@@ -51,7 +51,7 @@ devices.example.conf    annotated reference machine list
 ```
 
 Flow: **app → `screen-switch` → `displayplacer` / `m1ddc`.** The Swift app is UI
-only; it shells out for every display change. Keep it that way — the shell tool
+only; it shells out for every display change. Keep it that way: the shell tool
 must stay independently usable, and duplicating the logic in Swift would give you
 two sources of truth that drift.
 
@@ -59,8 +59,8 @@ That is a rule about **input switching too**, and it was broken once: the menu's
 device picker sent `m1ddc set input` straight from Swift, which quietly skipped
 `BLOCKED_INPUTS` (the guard that exists because one wrong code strands a panel),
 skipped the read-back that catches a monitor accepting an input it then declines,
-and got the ordering backwards on the way out. Swift may *read* DDC —
-`readInput()`, and the Settings sheet's current-input button — but anything that
+and got the ordering backwards on the way out. Swift may *read* DDC, in
+`readInput()` and the Settings sheet's current-input button, but anything that
 **changes** an input goes through `screen-switch input <code>`. Where the script
 needs to be aimed at a particular machine, pass `THIS_MAC_INPUT` / `OTHER_INPUT`
 in the environment: `config.sh` writes both as `${NAME:-value}`, so the
@@ -78,7 +78,7 @@ Resolution order in `screen-switch`: `$SCREEN_SWITCH_CONFIG` →
 Settings…, not a crash.
 
 `config.sh` is bash the shell tool sources and Swift both parses and generates.
-`BashConfig` in `Config.swift` handles exactly the subset the generator emits —
+`BashConfig` in `Config.swift` handles exactly the subset the generator emits:
 scalars, `${NAME:-default}`, and multi-line arrays. Two traps if you touch it:
 
 - Array elements contain `origin:(0,0)`, so "find the closing paren" has to mean
@@ -97,7 +97,7 @@ names and are still accepted as aliases in `normalize_mode()` and
 
 This is why the Settings window can exist, and it is worth not re-deriving:
 
-- `m1ddc display list` prints `[2] DELL U2718Q (3F85B0D8-…)` — the DDC index, the
+- `m1ddc display list` prints `[2] DELL U2718Q (3F85B0D8-…)`: the DDC index, the
   marketing name, and the **persistent screen id displayplacer uses**, on one
   line. The built-in prints `(null)` for its name.
 - `m1ddc display <uuid>` works as well as `m1ddc display <index>`. Prefer the
@@ -118,23 +118,23 @@ This is why the Settings window can exist, and it is worth not re-deriving:
 
 What it cannot get you is the **machine list**. There is no signal-presence VCP
 (below), so the only machine detection can name is whichever one the monitor is
-showing at that moment — one row, not a list. So first run seeds exactly that:
+showing at that moment, one row and not a list. So first run seeds exactly that:
 `seedThisMac()` writes a single device from the live DDC reading, named after the
 computer, mode `extended`, and only into an *empty* list with the shared monitor
 actually attached. **Add This Mac** in the Devices pane does the same on demand,
 and marks an input already in the list rather than adding it twice. The other
 machines still need the physical switch plus **Use Monitor's Current Input**;
 that asymmetry is the hardware's, not the UI's. Never add a "scan" that sweeps
-input codes to fill the list — see the destructive-inputs note below.
+input codes to fill the list; see the destructive-inputs note below.
 
 Every path that adds a machine now ends in `syncInputRoles()`. It used to be
 called only from the This Mac checkbox, so adding a mirrored machine through the
-+ sheet left `OTHER_INPUT` empty and `screen-switch toggle` — the Shortcut path —
++ sheet left `OTHER_INPUT` empty and `screen-switch toggle`, the Shortcut path,
 with nothing to switch to.
 
 A Retina panel offers 130-odd modes. `offeredModes` reduces that to one entry per
-resolution at its best refresh rate, preferring scaled modes — a menu a person
-can read. Do not put the raw list in a popup.
+resolution at its best refresh rate, preferring scaled modes, which is a menu a
+person can read. Do not put the raw list in a popup.
 
 ## Facts that cost something to learn
 
@@ -144,7 +144,7 @@ can read. Do not put the raw list in a popup.
 
 On a DELL U2718Q, selecting VCP input 15 makes the panel drop its link to the
 Mac's mDP port entirely. The display vanishes from macOS *and* the DDC channel
-goes with it, so nothing on the Mac can undo it — it takes a physical press of
+goes with it, so nothing on the Mac can undo it; it takes a physical press of
 the monitor's buttons. DP and mDP evidently share a link there. HDMI 1 does
 **not** do this.
 
@@ -158,20 +158,21 @@ the app learns the code. Never add a feature that sweeps input codes to see what
 sticks. If you are testing DDC yourself, point `OTHER_INPUT` at the input the Mac
 is already on.
 
-`InputNames` in `Config.swift` guesses connector names from a code — the standard
-MCCS table, plus LG's own numbering when the display's name says LG. It exists
-because the failure is asymmetric: a wrong *code* can strand a display, a wrong
-*name* costs one editable word. So it feeds the Name placeholder, the fallback
-label, and the entries in the input combo box — nothing else. Do not let it grow
-into anything that picks a code, orders a probe, or is trusted over a live DDC
-read.
+`InputNames` in `Config.swift` guesses connector names from a code, using the
+standard MCCS table plus LG's own numbering when the display's name says LG. It
+exists because the failure is asymmetric: a wrong *code* can strand a display,
+a wrong *name* costs one editable word. So it feeds the Name placeholder, the fallback
+label, and the entries in the input combo box, and nothing else. Do not let it
+grow into anything that picks a code, orders a probe, or is trusted over a live
+DDC read.
 
 The input field is a combo box in both places it appears, the Add sheet and the
 Devices table, and it is deliberately not a popup: a monitor nobody has a table
 for still has to be typeable, and "Use Monitor's Current Input" can put a code in
-it that is on no list. `InputNames.code(from:)` is the single place a picked entry
-("17 — HDMI 1") becomes what `devices.conf` stores (17). The Input column is wide
-because an NSComboBox's list is only as wide as the control.
+it that is on no list. `InputNames.code(from:)` is the single place a picked
+entry, code and connector name together, becomes the bare number `devices.conf`
+stores. The Input column is wide because an NSComboBox's list is only as wide as
+the control.
 
 ### DDC lies in two ways
 
@@ -195,14 +196,14 @@ one says "error" or "unable":
 
 A guard listing the phrases it knows treats every other one as a good read. That
 is how an early probe marched past a failure and into input 15, and later how the
-log recorded the second sentence as an input code — `input 16 -> The specified
-display does not exist...` — because the phrase list had been written against the
+log recorded the second sentence as an input code (`input 16 -> The specified
+display does not exist...`), because the phrase list had been written against the
 first message only.
 
 So `ddc_failed()` in `lib.sh` and `ddcFailed()` in `Displays.swift` recognise the
 one *good* shape instead: a plain number, which is all a VCP value ever is.
 Prose of any wording fails. Do not turn either back into a phrase list, and do
-not add a range check — a monitor may answer with a code nothing configured
+not add a range check: a monitor may answer with a code nothing configured
 expects (a switch transient once read `32`), and that is a reading, not a dead
 link. Keep the two in sync.
 
@@ -233,13 +234,13 @@ that feature.
 It scans for a new input when the current one *dies*, and never steals from a
 live signal. A Mac that is always awake never loses its input, so an arriving
 machine never wins. Departure automates; arrival needs a gesture. That asymmetry
-is deliberate and documented — do not "fix" it.
+is deliberate and documented. Do not "fix" it.
 
 ### Status items cannot cross the notch
 
 On a notched MacBook Pro, the only usable menu bar space is the strip to the
 *right* of the notch; the wide gap to its left is unavailable. When that strip is
-full macOS silently drops new items — the item still reports `isVisible == true`
+full macOS silently drops new items: the item still reports `isVisible == true`
 with a valid button, nothing is drawn, and nothing logs an error. If the icon is
 missing, the fix is freeing a slot, not debugging the app. This cost a long
 diagnostic detour.
@@ -249,7 +250,7 @@ diagnostic detour.
 `KeepAlive = {SuccessfulExit: false}` means: restart on a *signal* or crash, stay
 dead on a clean `exit(0)`. That is what makes the menu's **Quit** work.
 
-Therefore `launchctl kill SIGTERM` does **not** stop the app — launchd restarts
+Therefore `launchctl kill SIGTERM` does **not** stop the app; launchd restarts
 it within seconds. `install-agent stop` uses `bootout` instead. Do not change
 `KeepAlive` to `true` without realising it breaks Quit.
 
@@ -270,7 +271,7 @@ finds the shell tool via `$SCREEN_SWITCH_DIR`, then the bundle's parent director
   `screen-switch status`: a missing script or a broken tool path used to read as
   a confident "mirrored" in the menu and in `poll()`'s comparison. Use
   `Mode(exactly:)` for anything that has to be trusted, and show "unknown"
-  rather than guessing. The failure is logged once per distinct reason —
+  rather than guessing. The failure is logged once per distinct reason, because
   `rebuildMenu()` runs on every poll and every menu open, so logging each time
   would drown the log.
 - **The shell tool's exit status is not optional to check.** `runScript()` logs
@@ -286,7 +287,7 @@ finds the shell tool via `$SCREEN_SWITCH_DIR`, then the bundle's parent director
 
 ## Nothing blocks the main thread
 
-A reading is two subprocesses — a DDC read and `screen-switch status` — about
+A reading is two subprocesses, a DDC read and `screen-switch status`, about
 130ms together on a good day and unbounded on a bad one, because a monitor that
 has stopped answering DDC does not answer quickly. Both used to run on the main
 thread, on a timer.
@@ -312,7 +313,7 @@ it is a program that prints failures and exits non-zero.
 It points `XDG_CONFIG_HOME` **and `SCREEN_SWITCH_LOG`** at a scratch directory.
 The second one exists because `NSHomeDirectory()` ignores `$HOME`, so before
 `Paths.logFile` took an override there was no way to test the log trimming
-without writing to the real log — and the trim then eats the real history. That
+without writing to the real log, and the trim then eats the real history. That
 happened. Anything that writes to a path must be overridable before it is
 tested.
 
@@ -346,7 +347,7 @@ The HIG constraints that shaped it, so they do not get undone:
   control commits to disk and calls `app.reloadConfig()`. Text fields commit on
   end-editing after validation.
 - "Settings…", not "Preferences…" (renamed in macOS 13; `⌘,` is reserved for it).
-- Style mask is `[.titled, .closable]` — a settings window is sized by its
+- Style mask is `[.titled, .closable]`: a settings window is sized by its
   content and is not a document.
 - Panes are `NSGridView`s with system fonts and colours only, so Dark Mode and
   Increase Contrast need no code. There are no hardcoded colours anywhere; keep
@@ -363,7 +364,7 @@ The HIG constraints that shaped it, so they do not get undone:
 
 First run seeds what it can from detection (main display, shared monitor, mirror
 candidates) and opens the window by itself, so the user is never looking at an
-empty form. It only fills *empty* fields — a half-finished config stays as it is.
+empty form. It only fills *empty* fields, so a half-finished config stays put.
 
 Capturing the arrangement while the screens are mirrored would store the mirror
 set as the layout to return to. There is a warning sheet for that; keep it.
@@ -372,12 +373,12 @@ set as the layout to return to. There is a warning sheet for that; keep it.
 
 **The dangerous operation is putting the Mac into extended mode while the monitor
 is showing the other machine.** The Mac's desktop then lives on a screen the user
-cannot see — the exact problem this project exists to solve. Check
+cannot see, which is the exact problem this project exists to solve. Check
 `m1ddc display <id> get input` before any layout change during testing.
 
-- Test DDC paths with `OTHER_INPUT=<the Mac's own input> ./screen-switch mirrored`
-  — exercises the real code path while pointing at the input the Mac is already
-  on, so nothing can be stranded.
+- Test DDC paths with `OTHER_INPUT=<the Mac's own input> ./screen-switch mirrored`.
+  That exercises the real code path while pointing at the input the Mac is
+  already on, so nothing can be stranded.
 - Capture the restore command from `displayplacer list` *before* experimenting;
   it is printed at the bottom of the output.
 - Never send an input code you have not read off the monitor.
@@ -401,19 +402,19 @@ Two findings from making the Login Items row look right, both measured:
   own, so black padding becomes grey padding. An icon that fills its canvas is
   masked to the system shape instead, which is the only way to have none. So
   `drawAppIcon` fills the square and lets the mask round it, and the screen's
-  white bezel — which would fall outside that mask — is gone. The diagonal is
-  what carries over from the menu bar glyph.
+  white bezel, which would fall outside that mask, is gone. The diagonal is what
+  carries over from the menu bar glyph.
 - **LaunchServices caches the icon against the bundle's date.** A re-rendered
   `AppIcon.icns` keeps coming back as the previous one, `lsregister -f` or not,
   until the bundle's own timestamp moves. `build` therefore touches the bundle
   before registering it. BTM caches separately again, so a changed icon only
-  reaches an existing login item when the item is re-registered — untick and
+  reaches an existing login item when the item is re-registered: untick and
   re-tick the checkbox.
 
 The row says **Screen Switch.app**, not *Screen Switch*, and nothing in the app
 can change that. It is the Finder preference "Show all filename extensions":
 with it on, `URLResourceValues.localizedName` appends `.app` to every
-application on the machine, and BTM shows that string — every other app row in
+application on the machine, and BTM shows that string. Every other app row in
 that list is the same (`1Password.app`, `Docker.app`, `Spotify.app`).
 `LSHasLocalizedDisplayName` with a localized `CFBundleDisplayName` does *not*
 override it; that was tried with a deliberately different name on a scratch copy
@@ -432,17 +433,17 @@ rows in Login Items, which the pane points out when it finds the other plist.
 
 All three were tried on a real machine. The Login Items row is the difference:
 
-- **`SMAppService.agent`** — the item belongs to the app that registered it, so
+- **`SMAppService.agent`.** The item belongs to the app that registered it, so
   System Settings lists it under **Allow in the Background** as "Screen
   Switch.app" with the real icon. `KeepAlive` survives, because it is still a
   launchd job. This is what ships.
-- **`SMAppService.mainApp`** — lands under **Open at Login** instead, and
+- **`SMAppService.mainApp`.** Lands under **Open at Login** instead, and
   loginwindow launches the app directly, so there is no `KeepAlive` and no crash
   recovery. Rejected: the row is in the wrong list and it loses a property.
-- **`install-agent`'s plist** — lives outside any bundle, so BTM describes the
+- **`install-agent`'s plist.** Lives outside any bundle, so BTM describes the
   program launchd runs: a bare executable named **ScreenSwitch** with the
   generic `exec` icon and "part of an unknown developer". `AssociatedBundleIdentifiers`
-  is in that plist and does *not* fix it — the association wants the job's
+  is in that plist and does *not* fix it: the association wants the job's
   program and the bundle to share a Team ID, and an ad-hoc signature has no
   team. `lsregister -f` and a full bootout/bootstrap change nothing; both were
   measured. Do not spend another afternoon on that icon.
@@ -475,13 +476,14 @@ the loser dead.
 - `register()` returns success even when the user has the item switched *off* in
   System Settings; only `status` afterwards reports `.requiresApproval`. Check
   the status, do not trust the call.
-- The checkbox is never remembered in config — it is read from the service's
+- The checkbox is never remembered in config; it is read from the service's
   `status` every `refreshControls()`, which `windowDidBecomeKey` already calls,
   so toggling it in System Settings does not leave a lying checkbox.
 - Registration is by bundle path. Moving the checkout leaves a dead Login Items
   entry; re-toggle after a move.
-- `LoginItem.isAvailable` is false when not running from a `.app` — the headless
-  Settings harness below — and the checkbox is disabled rather than failing.
+- `LoginItem.isAvailable` is false when not running from a `.app`, as in the
+  headless Settings harness below, and the checkbox is disabled rather than
+  failing.
 - **No shell commands in the UI.** When the pane has to mention the other login
   item it says to switch it off in System Settings, where the user already is.
   `install-agent` is documented in the README, not in the app.
@@ -496,13 +498,13 @@ Bumping the deployment target below macOS 13 would remove SMAppService.
 ./install-agent  # renders the plist for this machine, loads it, starts the app
 ```
 
-**Re-sign after every rebuild** — `build` does it. Login Items keys off the
+**Re-sign after every rebuild**; `build` does it. Login Items keys off the
 signature; skipping it reverts the entry to "Unknown Developer".
 
 The bundle exists so System Settings shows a real name. macOS reads it from
 `Info.plist`; a LaunchAgent running a bare script through `/bin/bash` is listed
 as **bash** under **Unknown Developer**. `LSUIElement` (not `LSBackgroundOnly`)
-is required — the latter forbids any UI, including a menu bar item.
+is required, because the latter forbids any UI, including a menu bar item.
 
 Verify the Login Items entry with:
 
@@ -510,7 +512,7 @@ Verify the Login Items entry with:
 sfltool dumpbtm | grep -B8 org.bitstorm.screen-switch
 ```
 
-`Developer Name: (null)` is expected — the bundle is ad-hoc signed. The app is
+`Developer Name: (null)` is expected, since the bundle is ad-hoc signed. The app is
 also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
 
 ## Adding features
@@ -531,7 +533,7 @@ also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
   modern standby, so "asleep in a bag" and "sitting down to work" look identical,
   and the failure mode is the monitor yanking itself away mid-task. Arrival is a
   decision, not an event.
-- **A helper on the other machine.** Cannot be assumed — the original case was a
+- **A helper on the other machine.** Cannot be assumed: the original case was a
   corporate laptop without admin rights. Raise it, do not assume it.
 - **Probing input codes to discover them.** See above. Read the current input
   instead.
@@ -558,5 +560,5 @@ also deliberately unsandboxed; it runs Homebrew binaries and drives DDC.
 ```
 
 The rendered plist has an absolute path to the app, so moving the checkout breaks
-it — rerun `./install-agent` after any move. The app itself finds its shell tool
+it, so rerun `./install-agent` after any move. The app itself finds its shell tool
 relative to the bundle, so that half needs nothing.

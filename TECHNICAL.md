@@ -1,8 +1,8 @@
 # Technical details
 
 How Screen Switch works, and the things about DDC and displayplacer that shaped
-it. None of this is needed to use the app — that is the
-[README](README.md) — and the shell tools have their own page,
+it. None of this is needed to use the app; that is the
+[README](README.md), and the shell tools have their own page,
 [Command line](COMMAND-LINE.md).
 
 ## How it works
@@ -27,25 +27,26 @@ monitor over to the other machine.
 Going back to extended, the script tries to pull the monitor's input back over
 DDC. Whether that works is a property of your monitor: some keep answering DDC
 while showing another machine, some drop the channel with the picture. If yours
-does not cooperate, press its input button and then run the command — or turn the
+does not cooperate, press its input button and then run the command, or turn the
 attempt off in Settings → General.
 
 ## Input codes are per-monitor
 
-The DDC spec assigns VCP `0x60` values to input sources — commonly 15 and 16 for
-DisplayPort 1 and 2, 17 and 18 for HDMI 1 and 2, 27 for USB-C — but monitors
+The DDC spec assigns VCP `0x60` values to input sources: commonly 15 and 16 for
+DisplayPort 1 and 2, 17 and 18 for HDMI 1 and 2, 27 for USB-C. But monitors
 disagree, and some accept a value and then quietly ignore it. Nothing here
 assumes a numbering: **Use Monitor's Current Input** reads the live value from
 your panel, which is right by construction.
 
 The one place a numbering is guessed is *naming*: the input field is a combo box
-listing the connectors in use today — "17 — HDMI 1" — and picking one fills in
-the Name field's hint. Both are guesses and neither is binding. The field stays
-typeable, because the list cannot know your panel; picking 17 and typing 17 leave
-the same thing in `devices.conf`, which is the number.
+listing the connectors in use today, each shown with the code it usually carries,
+and picking one fills in the Name field's hint. Both are guesses and neither is
+binding. The field stays typeable, because the list cannot know your panel;
+picking 17 and typing 17 leave the same thing in `devices.conf`, which is the
+number.
 
 LG is the one brand worth a table of its own. It ships a second numbering
-entirely (208 DisplayPort 1, 144 HDMI 1, and so on — the values behind `m1ddc set
+entirely (208 DisplayPort 1, 144 HDMI 1, and so on: the values behind `m1ddc set
 input-alt`), so the app reads the brand off the display's own name and offers
 those first, with the standard codes after them for the LGs that answer those
 instead. An unrecognised code is left unnamed rather than guessed at.
@@ -67,7 +68,7 @@ nothing running on the Mac can undo it and only the monitor's own buttons bring
 it back.
 
 Measured example: on a **DELL U2718Q**, input 15 (DisplayPort 1) does exactly
-this — DisplayPort and mDP evidently share a link on that panel. HDMI 1 does not;
+this. DisplayPort and mDP evidently share a link on that panel. HDMI 1 does not;
 the mDP link stays up and DDC keeps answering.
 
 If you find such an input on your monitor, put it in **Settings → Advanced →
@@ -77,19 +78,19 @@ DisplayPort input elsewhere would be worse than useless.
 
 ## What DDC cannot tell you
 
-There is no MCCS code for "is there a signal on input X" — you can read which
+There is no MCCS code for "is there a signal on input X". You can read which
 input is *selected*, never which ones are live. With another machine powered and
 outputting on a different input, every DDC value reads back byte-identical to
 baseline and macOS sees nothing at all.
 
 So the monitor cannot tell you the other machine booted. It can only tell you
 which machine currently owns the monitor. That is still the best available signal
-for automation, and it needs no software on the other machine — but it follows
+for automation, and it needs no software on the other machine, but it follows
 the *monitor's* input selection, not any machine's power state.
 
 ## Why it is edge-triggered
 
-The app acts only when the input actually *changes* — never on steady state. That
+The app acts only when the input actually *changes*, never on steady state. That
 is what stops it fighting you: mirror by hand while the monitor stays on the Mac
 and there is no edge, so your choice stands. A level-triggered version would
 quietly undo it a few seconds later, every time.
@@ -103,20 +104,20 @@ return transients.
 ## Auto Select only helps in one direction
 
 With the monitor's **Auto Select** on, disconnecting the other machine makes the
-monitor fall back to the Mac, and the watcher restores your arrangement — fully
+monitor fall back to the Mac, and the watcher restores your arrangement, fully
 automatic. Connecting it does *not* switch the monitor: Auto Select scans for a
 new input only when the current one dies, and a Mac that is always awake never
 loses its input, so the arriving machine never wins.
 
-So starting work needs one gesture — the menu, or the monitor's own buttons — and
+So starting work needs one gesture (the menu, or the monitor's own buttons) and
 ending it needs none. That asymmetry is worth knowing about: arrival is a
 decision, departure is an event.
 
 ## The app and the shell tool
 
 `Screen Switch.app` is a native AppKit menu bar app. It shells out to
-`screen-switch` for the actual display work — including every input change, so
-the guard against inputs that strand you is in one place — which leaves the shell
+`screen-switch` for the actual display work, including every input change, so
+the guard against inputs that strand you is in one place. That leaves the shell
 script as the single source of truth and the app as the UI in front of it.
 
 Either way of starting it at login ends up as a launchd job, which has one
@@ -160,5 +161,5 @@ Your own settings, written by Settings… and read by the shell tool:
 ~/.config/screen-switch/devices.conf
 ```
 
-`screen-switch` reads the same two files, and can be pointed elsewhere — see
+`screen-switch` reads the same two files, and can be pointed elsewhere: see
 [Where it reads its configuration](COMMAND-LINE.md#where-it-reads-its-configuration).

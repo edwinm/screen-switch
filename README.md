@@ -6,7 +6,7 @@
 
 <p align="center">
   Two machines, one monitor. Hand the monitor over to the other machine and get
-  your Mac's windows back onto its own screen — from the menu bar, a hotkey, or
+  your Mac's windows back onto its own screen: from the menu bar, a hotkey, or
   automatically when the monitor's input changes.
 </p>
 
@@ -14,17 +14,17 @@
 
 ## The problem
 
-You have a Mac and one other machine — a work laptop, a desktop, a console — and
+You have a Mac and one other machine (a work laptop, a desktop, a console) and
 they share a single external monitor. You switch the monitor over to the other
 machine with its buttons, and now half your Mac is invisible: macOS still thinks
 the big display is there, so windows sit on a screen nobody can look at. You drag
-them back one by one, or you turn on mirroring — which makes your laptop screen
+them back one by one, or you turn on mirroring, which makes your laptop screen
 adopt the monitor's resolution and turns everything tiny, so you head into System
 Settings to fix *that*. Then you do the whole dance again in reverse when you
 switch back.
 
 Screen Switch makes it one click. Pick a machine from the menu bar and the
-monitor switches to it while your Mac rearranges itself to match — mirrored onto
+monitor switches to it while your Mac rearranges itself to match: mirrored onto
 your own screen at your own resolution when the monitor is away, back to your
 normal arrangement when it returns. Switch inputs at the monitor itself and the
 Mac notices and catches up on its own.
@@ -45,7 +45,7 @@ Mac notices and catches up on its own.
   xcode-select --install
   ```
 
-- Two command line tools, both in homebrew-core — no tap needed:
+- Two command line tools, both in homebrew-core, no tap needed:
 
   ```bash
   brew install displayplacer m1ddc
@@ -82,15 +82,17 @@ fills in almost everything. Two things are left for you:
 1. **Displays → Capture Current Arrangement.** Arrange your screens in System
    Settings the way you normally want them, with mirroring *off*, then capture.
    That is the layout Screen Switch returns to.
-2. **Devices → +.** This Mac is already in the list — the app reads the input the
+2. **Devices → +.** This Mac is already in the list: the app reads the input the
    monitor is on when it first runs, so if that row is missing or wrong, **Add
-   This Mac** re-reads it. Add each *other* machine that shares the monitor:
-   switch the monitor to that machine with its own buttons, click **Use
-   Monitor's Current Input**, and the input code is read straight off the
-   monitor — no probing, no guessing which number your panel uses for which
-   port. Name it, choose whether that machine means *Extended* (your
-   arrangement — this Mac) or *Mirrored* (everything on your own screen), and
-   you are done.
+   This Mac** re-reads it. Add each *other* machine that shares the monitor.
+   The input field lists the connectors most monitors have, so **HDMI 1** is one
+   pick away and the name fills itself in until you type your own. Monitors
+   disagree about these numbers, though, so the certain way is the other one:
+   switch the monitor to that machine with its own buttons and click **Use
+   Monitor's Current Input**, which reads the code straight off the panel. No
+   probing, no guessing which number your panel uses for which port. Name it,
+   choose whether that machine means *Extended* (your arrangement, this Mac) or
+   *Mirrored* (everything on your own screen), and you are done.
 
 Settings apply as you make them; there is no Save button and nothing needs a
 restart. Your configuration lives in `~/.config/screen-switch/`, outside the
@@ -117,7 +119,7 @@ the app notices within a few seconds and adjusts the Mac to match.
 
 ### From the command line
 
-Everything above is also a shell tool you can run directly — `screen-switch
+Everything above is also a shell tool you can run directly: `screen-switch
 toggle`, a hotkey through Shortcuts, and `install-agent` for the login item
 without the app. That is its own page: **[Command line](COMMAND-LINE.md)**.
 
@@ -138,21 +140,14 @@ Advanced → Open Log** shows.
 There is a second route that does the same job from a terminal, `install-agent`,
 described in [Command line](COMMAND-LINE.md#install-agent). Use one or the other.
 
-### Why the entry says "Screen Switch.app"
-
-Because Finder is set to show every filename extension — with that on, macOS
-appends `.app` to every application's name, and Login Items shows the same
-string for all of them. Turning off **Finder → Settings → Advanced → Show all
-filename extensions** drops the suffix everywhere, including here. Nothing in
-the app can override it.
-
 ### If the menu bar icon does not appear
 
 The menu bar has less room than it looks. On a notched MacBook Pro, status items
-cannot flow past the notch, so the only usable space is the strip to its *right* —
-the wide gap to the left of the notch is not available. When that strip is full,
-macOS silently drops new items: the item still reports `isVisible = true` with a
-valid button, it simply is not drawn, and there is no error anywhere.
+cannot flow past the notch, so the only usable space is the strip to its
+*right*; the wide gap to the left of the notch is not available. When that strip
+is full, macOS silently drops new items: the item still reports `isVisible =
+true` with a valid button, it simply is not drawn, and there is no error
+anywhere.
 
 If the icon is missing, remove another menu bar icon to free a slot. That is the
 whole fix.
@@ -168,12 +163,12 @@ here.
 
 ## More
 
-- **[Command line](COMMAND-LINE.md)** — `screen-switch`, a keyboard shortcut
+- **[Command line](COMMAND-LINE.md)**: `screen-switch`, a keyboard shortcut
   through Shortcuts, and `install-agent`.
-- **[Technical details](TECHNICAL.md)** — how the mirroring trick works, what
+- **[Technical details](TECHNICAL.md)**: how the mirroring trick works, what
   DDC can and cannot tell you, why the watcher is edge-triggered, and the files
   this repository is made of.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
