@@ -45,7 +45,7 @@ final class SettingsWindowController: NSWindowController {
     // Sheet state, kept alive while the sheet is up.
     private var addSheet: NSWindow?
     private var sheetName: NSTextField?
-    private var sheetCode: NSTextField?
+    private var sheetCode: NSComboBox?
     private var sheetMode: NSPopUpButton?
 
     init(app: AppDelegate) {
@@ -305,10 +305,10 @@ final class SettingsWindowController: NSWindowController {
             c.width = width
             return c
         }
-        devicesTable.addTableColumn(column("label", "Name", width: 200))
-        devicesTable.addTableColumn(column("code", "Input", width: 60))
-        devicesTable.addTableColumn(column("mode", "Displays", width: 120))
-        devicesTable.addTableColumn(column("thisMac", "This Mac", width: 70))
+        devicesTable.addTableColumn(column("label", "Name", width: 140))
+        devicesTable.addTableColumn(column("code", "Input", width: 150))
+        devicesTable.addTableColumn(column("mode", "Displays", width: 110))
+        devicesTable.addTableColumn(column("thisMac", "This Mac", width: 80))
         devicesTable.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
 
         let scroll = NSScrollView()
@@ -887,10 +887,10 @@ final class SettingsWindowController: NSWindowController {
         name.translatesAutoresizingMaskIntoConstraints = false
         name.widthAnchor.constraint(equalToConstant: 220).isActive = true
 
-        let code = NSTextField(string: "")
+        let code = inputCombo(value: "")
         code.placeholderString = "17"
         code.translatesAutoresizingMaskIntoConstraints = false
-        code.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        code.widthAnchor.constraint(equalToConstant: 170).isActive = true
 
         // The reason nobody has to probe their monitor: switch it over with its
         // own buttons, then click, and the live DDC value is read back.
@@ -913,7 +913,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Name:"), name],
             [label("Input code:"),
              stack(codeRow,
-                   help: "Switch the monitor to that machine with its own buttons, then click — the code is read from the monitor. Some monitors drop the link to the Mac when certain inputs are chosen; if that happens, the monitor’s buttons bring it back.")],
+                   help: "Pick a common input from the list, or switch the monitor to that machine with its own buttons and click — reading the code off the monitor is the one way to be sure. Monitors disagree about these numbers, and some drop the link to the Mac when certain inputs are chosen; if that happens, the monitor’s buttons bring it back.")],
             [label("Displays:"),
              stack(mode,
                    help: "“Extended” restores your captured arrangement — that is this Mac. “Mirrored” puts everything on your own screen, for a machine that takes the monitor away.")],
@@ -965,6 +965,41 @@ final class SettingsWindowController: NSWindowController {
             return
         }
         sheetCode?.stringValue = value
+        refreshSuggestedName()
+    }
+
+    /// What the monitor probably calls this input, shown as the Name field's
+    /// placeholder rather than typed into it: it is a guess, so it should look
+    /// like one, and nobody has to clear it to write "Work laptop". Committing
+    /// an empty name takes the same string -- see confirmAddDevice.
+    private func refreshSuggestedName() {
+        guard let code = sheetCode, let name = sheetName else { return }
+        name.placeholderString = suggestedName(for: code.stringValue) ?? "Work laptop"
+    }
+
+    /// The brand comes from the display DDC actually talks to, which is the
+    /// shared monitor unless Advanced points somewhere else.
+    private func suggestedName(for code: String) -> String? {
+        InputNames.label(for: code, monitor: ddcMonitorName)
+    }
+
+    private var ddcMonitorName: String? { snapshot.display(id: config.ddcTarget)?.name }
+
+    /// The input picker: a combo box rather than a popup, because the list is a
+    /// guess. It holds the codes the brand tables know about, and a panel that
+    /// answers with something else -- which is the whole reason "Use Monitor's
+    /// Current Input" exists -- still has to be typeable. Picking "17 — HDMI 1"
+    /// and typing 17 leave the same thing behind: the number.
+    private func inputCombo(value: String) -> NSComboBox {
+        let combo = NSComboBox()
+        combo.completes = true
+        combo.numberOfVisibleItems = 10
+        combo.addItems(withObjectValues:
+            InputNames.choices(monitor: ddcMonitorName).map { "\($0.code) — \($0.name)" })
+        combo.stringValue = value
+        combo.delegate = self
+        combo.setAccessibilityLabel("Input code")
+        return combo
     }
 
     /// Same reading as the Add sheet's button, straight into a row. An input
@@ -994,7 +1029,7 @@ final class SettingsWindowController: NSWindowController {
     @objc private func cancelAddDevice() { endAddSheet() }
 
     @objc private func confirmAddDevice() {
-        let code = (sheetCode?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
+        let code = InputNames.code(from: sheetCode?.stringValue ?? "")
         let name = (sheetName?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
         guard let number = Int(code), (0...255).contains(number) else {
             let alert = NSAlert()
@@ -1008,7 +1043,8 @@ final class SettingsWindowController: NSWindowController {
         }
         let mode = Mode(config: sheetMode?.selectedItem?.representedObject as? String ?? "mirrored")
         let label = Device.clean(label: name)
-        devices.append(Device(code: code, label: label.isEmpty ? "Input \(code)" : label, mode: mode))
+        let fallback = suggestedName(for: code) ?? "Input \(code)"
+        devices.append(Device(code: code, label: label.isEmpty ? fallback : label, mode: mode))
         reloadDevices()
         commitDevices()
         // Both roles, not just THIS_MAC_INPUT: OTHER_INPUT is what
@@ -1043,12 +1079,15 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func deviceCodeEdited(_ sender: NSTextField) {
         guard devices.indices.contains(sender.tag) else { return }
-        let value = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        let value = InputNames.code(from: sender.stringValue)
         guard let number = Int(value), (0...255).contains(number) else {
             NSSound.beep()
             sender.stringValue = devices[sender.tag].code
             return
         }
+        // A picked row arrives as "17 — HDMI 1"; the column shows the code, and
+        // the name of the machine is the Name column's job.
+        if sender.stringValue != value { sender.stringValue = value }
         let was = devices[sender.tag].code
         devices[sender.tag].code = value
         if config.thisMacInput == was { config.thisMacInput = value; commitConfig() }
@@ -1137,7 +1176,27 @@ extension SettingsWindowController: NSWindowDelegate {
 
 // MARK: - Text field commits
 
-extension SettingsWindowController: NSTextFieldDelegate {
+extension SettingsWindowController: NSComboBoxDelegate {
+    /// Only the Add sheet's code field is a delegate of this controller while
+    /// it is up, and the hint should follow every keystroke, not wait for the
+    /// field to give up focus.
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === sheetCode else { return }
+        refreshSuggestedName()
+    }
+
+    /// Picking from the list does not go through controlTextDidChange, and the
+    /// combo box sets its own text *after* this notification -- hence the hop to
+    /// the next pass of the run loop, where the field says what was chosen.
+    func comboBoxSelectionDidChange(_ obj: Notification) {
+        guard let combo = obj.object as? NSComboBox else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if combo === self.sheetCode { self.refreshSuggestedName() }
+            else if self.devices.indices.contains(combo.tag) { self.deviceCodeEdited(combo) }
+        }
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
         switch field {
@@ -1166,17 +1225,28 @@ extension SettingsWindowController: NSTableViewDataSource, NSTableViewDelegate {
         let device = devices[row]
 
         switch column.identifier.rawValue {
-        case "label", "code":
-            let isLabel = column.identifier.rawValue == "label"
-            let field = NSTextField(string: isLabel ? device.label : device.code)
+        case "label":
+            let field = NSTextField(string: device.label)
             field.isBordered = false
             field.drawsBackground = false
             field.isEditable = true
             field.tag = row
             field.target = self
-            field.action = isLabel ? #selector(deviceLabelEdited(_:)) : #selector(deviceCodeEdited(_:))
-            field.setAccessibilityLabel(isLabel ? "Name" : "Input code")
+            field.action = #selector(deviceLabelEdited(_:))
+            field.setAccessibilityLabel("Name")
             return field
+
+        case "code":
+            // Same picker as the Add sheet, so changing a code later is the
+            // same gesture as entering one.
+            let combo = inputCombo(value: device.code)
+            combo.isBordered = false
+            combo.drawsBackground = false
+            combo.isButtonBordered = false
+            combo.tag = row
+            combo.target = self
+            combo.action = #selector(deviceCodeEdited(_:))
+            return combo
 
         case "mode":
             let popup = NSPopUpButton()

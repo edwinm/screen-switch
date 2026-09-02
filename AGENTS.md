@@ -158,6 +158,21 @@ the app learns the code. Never add a feature that sweeps input codes to see what
 sticks. If you are testing DDC yourself, point `OTHER_INPUT` at the input the Mac
 is already on.
 
+`InputNames` in `Config.swift` guesses connector names from a code — the standard
+MCCS table, plus LG's own numbering when the display's name says LG. It exists
+because the failure is asymmetric: a wrong *code* can strand a display, a wrong
+*name* costs one editable word. So it feeds the Name placeholder, the fallback
+label, and the entries in the input combo box — nothing else. Do not let it grow
+into anything that picks a code, orders a probe, or is trusted over a live DDC
+read.
+
+The input field is a combo box in both places it appears, the Add sheet and the
+Devices table, and it is deliberately not a popup: a monitor nobody has a table
+for still has to be typeable, and "Use Monitor's Current Input" can put a code in
+it that is on no list. `InputNames.code(from:)` is the single place a picked entry
+("17 — HDMI 1") becomes what `devices.conf` stores (17). The Input column is wide
+because an NSComboBox's list is only as wide as the control.
+
 ### DDC lies in two ways
 
 - **A successful `set input` does not mean the input changed.** Input 18 on the

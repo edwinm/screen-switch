@@ -38,6 +38,18 @@ disagree, and some accept a value and then quietly ignore it. Nothing here
 assumes a numbering: **Use Monitor's Current Input** reads the live value from
 your panel, which is right by construction.
 
+The one place a numbering is guessed is *naming*: the input field is a combo box
+listing the connectors in use today — "17 — HDMI 1" — and picking one fills in
+the Name field's hint. Both are guesses and neither is binding. The field stays
+typeable, because the list cannot know your panel; picking 17 and typing 17 leave
+the same thing in `devices.conf`, which is the number.
+
+LG is the one brand worth a table of its own. It ships a second numbering
+entirely (208 DisplayPort 1, 144 HDMI 1, and so on — the values behind `m1ddc set
+input-alt`), so the app reads the brand off the display's own name and offers
+those first, with the standard codes after them for the LGs that answer those
+instead. An unrecognised code is left unnamed rather than guessed at.
+
 Two behaviours worth knowing if you do go probing:
 
 - **A successful `set` does not mean the input changed.** Some monitors return

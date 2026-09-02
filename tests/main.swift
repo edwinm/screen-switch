@@ -56,6 +56,55 @@ equal("...with the pipe replaced", reloaded.first?.label, "Home/Work")
 equal("a name with a newline is flattened", reloaded.last?.label, "Kitchen TV")
 equal("clean() trims", Device.clean(label: "  spaced  "), "spaced")
 
+// MARK: - Suggested input names
+
+section("Input names")
+equal("the standard table names HDMI 1",
+      InputNames.label(for: "17", monitor: "DELL U2718Q"), "HDMI 1")
+equal("...and DisplayPort 2, which is this Mac's port here",
+      InputNames.label(for: "16", monitor: "DELL U2718Q"), "DisplayPort 2")
+equal("whitespace around a code is still a code",
+      InputNames.label(for: " 27\n", monitor: nil), "USB-C")
+// The brand that ships a second numbering. m1ddc calls it `set input-alt`.
+equal("LG's own numbering is read for an LG",
+      InputNames.label(for: "208", monitor: "LG HDR 4K"), "DisplayPort 1")
+equal("...including under its EDID id, which is what a panel with no marketing "
+      + "name reports",
+      InputNames.label(for: "144", monitor: "GSM 27GN950"), "HDMI 1")
+equal("an LG that answers a standard code still gets the standard name",
+      InputNames.label(for: "17", monitor: "LG HDR 4K"), "HDMI 1")
+// The guess is per brand, so a Dell answering 208 is a Dell nobody has a table
+// for -- and no name is better than a made-up one.
+check("the LG table is not applied to everyone",
+      InputNames.label(for: "208", monitor: "DELL U2718Q") == nil)
+check("a model name containing the letters is not the brand",
+      InputNames.label(for: "208", monitor: "BenQ PDLG1") == nil)
+check("an unknown code has no name", InputNames.label(for: "99", monitor: nil) == nil)
+check("nor does something that is not a code",
+      InputNames.label(for: "HDMI", monitor: nil) == nil)
+
+// What the picker leaves in the field is a list entry, and what devices.conf
+// holds is a number. code(from:) is the one place that difference is resolved.
+equal("a picked entry is just its code", InputNames.code(from: "17 — HDMI 1"), "17")
+equal("a typed code survives untouched", InputNames.code(from: " 208 "), "208")
+equal("something that is not a code comes back for the field to reject",
+      InputNames.code(from: "HDMI 1"), "HDMI 1")
+equal("a picked entry names itself", InputNames.label(for: "17 — HDMI 1", monitor: nil), "HDMI 1")
+
+equal("the list is the connectors in use today",
+      InputNames.choices(monitor: "DELL U2718Q").map(\.code), ["15", "16", "17", "18", "27"])
+equal("an LG is offered its own numbering first, then the standard one",
+      InputNames.choices(monitor: "LG HDR 4K").map(\.code),
+      ["144", "145", "208", "209", "210", "15", "16", "17", "18", "27"])
+// A list entry that named itself differently from the field beside it would be
+// the one bug this cannot be allowed to have.
+for monitor in ["DELL U2718Q", "LG HDR 4K"] {
+    let bad = InputNames.choices(monitor: monitor)
+        .filter { InputNames.label(for: $0.code, monitor: monitor) != $0.name }
+    check("every offer agrees with the name it gets back (\(monitor))", bad.isEmpty,
+          "disagreed: \(bad)")
+}
+
 // MARK: - The bash subset
 
 section("BashConfig")

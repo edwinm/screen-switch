@@ -63,6 +63,98 @@ struct Device: Equatable {
     }
 }
 
+// MARK: - Input names
+
+/// A guess at what a monitor calls one of its inputs, used for exactly one
+/// thing: the name a machine gets when nobody has typed one.
+///
+/// MCCS assigns VCP 0x60 values to connectors, and plenty of monitors follow it
+/// -- Dell is close to reliable about it -- but the exceptions are not rare
+/// enough to build on. LG ships a second numbering entirely, up in the range
+/// MCCS leaves undefined, which is why m1ddc has a `set input-alt` command at
+/// all. Others advertise the standard values in their capabilities string and
+/// then act on different ones.
+///
+/// So this never produces a *code*. Codes come from the monitor, by reading
+/// VCP 0x60, and a wrong one can take the DDC channel down with the picture.
+/// A wrong name costs a word that was editable anyway, which is the whole
+/// reason the guess is allowed to live here and nowhere else.
+enum InputNames {
+
+    /// The MCCS table, as documented for `m1ddc set input`.
+    private static let standard: [Int: String] = [
+        1: "VGA 1", 2: "VGA 2",
+        3: "DVI 1", 4: "DVI 2",
+        5: "Composite 1", 6: "Composite 2",
+        7: "S-Video 1", 8: "S-Video 2",
+        9: "Tuner 1", 10: "Tuner 2", 11: "Tuner 3",
+        12: "Component 1", 13: "Component 2", 14: "Component 3",
+        15: "DisplayPort 1", 16: "DisplayPort 2",
+        17: "HDMI 1", 18: "HDMI 2",
+        27: "USB-C",
+    ]
+
+    /// LG's own numbering, the one `m1ddc set input-alt` documents. It does not
+    /// collide with the standard table, so an LG that answers 17 still gets
+    /// "HDMI 1" -- some of them do.
+    private static let lgAlternate: [Int: String] = [
+        144: "HDMI 1", 145: "HDMI 2",
+        208: "DisplayPort 1", 209: "DisplayPort 2",
+        210: "USB-C",
+    ]
+
+    /// `monitor` is the DDC display's marketing name, e.g. "DELL U2718Q". Only
+    /// the brand is read out of it, and only LG changes the answer; everything
+    /// else is guessed from the standard table, which is right more often than
+    /// it is not. An unknown code gets nil -- no name is better than a made-up
+    /// one.
+    static func label(for code: String, monitor: String?) -> String? {
+        guard let n = Int(self.code(from: code)) else { return nil }
+        if isLG(monitor), let name = lgAlternate[n] { return name }
+        return standard[n]
+    }
+
+    /// What to offer in the input picker: the connectors a machine plugged into
+    /// a monitor today actually has. The naming tables stay longer than this on
+    /// purpose -- a panel that answers 5 still gets "Composite 1" -- but nobody
+    /// picking a machine off a list is reaching for composite video.
+    ///
+    /// An LG gets its own numbering first, because that is what an LG that needs
+    /// this list at all is using; the standard codes follow, since some LGs
+    /// answer those instead.
+    static func choices(monitor: String?) -> [(code: String, name: String)] {
+        let modern = [15, 16, 17, 18, 27]
+        var out: [(code: String, name: String)] = []
+        if isLG(monitor) {
+            out += lgAlternate.keys.sorted().map { (String($0), lgAlternate[$0]!) }
+        }
+        out += modern.map { (String($0), standard[$0]!) }
+        return out
+    }
+
+    /// The code out of a picked list entry ("17 - HDMI 1" is code 17), or out of
+    /// something typed by hand. Anything that does not start with a number comes
+    /// back trimmed and unchanged, so the field's own validation still gets to
+    /// reject it and say so.
+    static func code(from entry: String) -> String {
+        let t = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = t.prefix { $0.isNumber }
+        return digits.isEmpty ? t : String(digits)
+    }
+
+    /// First word only, so a model name that happens to contain the letters
+    /// cannot pass for the brand. "GSM" is LG's EDID id, which is what shows up
+    /// in place of a marketing name on panels that do not report one.
+    private static func isLG(_ monitor: String?) -> Bool {
+        let first = (monitor ?? "")
+            .uppercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .first
+            .map(String.init) ?? ""
+        return first == "LG" || first == "LGE" || first == "GSM"
+    }
+}
+
 // MARK: - Locations
 
 enum Paths {
